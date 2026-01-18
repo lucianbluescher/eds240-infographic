@@ -4,7 +4,7 @@
 
 ---
 
-## 📋 Project Overview
+## Project Overview
 
 This repository contains my **EDS 240 Final Project**: a data-driven infographic that argues for the strategic development of **hydropower and multi-purpose reservoirs** as critical solutions for global decarbonization and climate change adaptation.
 
