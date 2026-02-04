@@ -1,0 +1,36 @@
+{
+  "chart": {
+    "title": "Per capita methane emissions",
+    "subtitle": "Per capita methane emissions are measured in tonnes of [carbon dioxide-equivalents](#dod:carbondioxideequivalents) per person per year.",
+    "citation": "Jones et al. (2025); Population based on various sources (2024)",
+    "originalChartUrl": "https://ourworldindata.org/explorers/co2?Gas+or+Warming=Methane&Accounting=Territorial&Fuel+or+Land+Use+Change=All+fossil+emissions&Count=Per+capita&country=CHN~USA~IND~GBR~OWID_WRL",
+    "selection": [
+      "China",
+      "United States",
+      "India",
+      "United Kingdom",
+      "World"
+    ]
+  },
+  "columns": {
+    "Per capita methane emissions in CO₂ equivalents": {
+      "titleShort": "Per capita methane emissions including land use",
+      "titleLong": "Per capita methane emissions including land use",
+      "descriptionShort": "Measured in tonnes per person of [carbon dioxide-equivalents](#dod:carbondioxideequivalents) over a 100-year timescale.",
+      "descriptionProcessing": "Methane emissions in tonnes have been converted to carbon-dioxide equivalents over a 100-year timescale using a conversion factor of 29.8 for fossil sources and 27.2 for agricultural and land use sources. These factors are taken from the 6th Assessment Report (AR6) of the Intergovernmental Panel on Climate Change (IPCC).",
+      "shortUnit": "t/person",
+      "unit": "tonnes of CO₂ equivalents per person",
+      "timespan": "1850-2024",
+      "type": "Numeric",
+      "owidVariableId": 1129042,
+      "shortName": "annual_emissions_ch4_total_co2eq_per_capita",
+      "lastUpdated": "2025-12-04",
+      "nextUpdate": "2026-12-04",
+      "citationShort": "Jones et al. (2025); Population based on various sources (2024) – with major processing by Our World in Data",
+      "citationLong": "Jones et al. (2025); Population based on various sources (2024) – with major processing by Our World in Data. “Per capita methane emissions including land use” [dataset]. Jones et al., “National contributions to climate change 2025.1”; Various sources, “Population” [original data].",
+      "fullMetadata": "https://api.ourworldindata.org/v1/indicators/1129042.metadata.json"
+    }
+  },
+  "dateDownloaded": "2026-02-04",
+  "activeFilters": {}
+}
