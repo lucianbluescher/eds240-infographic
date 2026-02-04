@@ -1,6 +1,6 @@
 ---
-title: "Exploratory Data Analysis: Hydropower's Climate Impact Dilemma"
-author: "Your Name"
+title: "Exploratory Data Analysis"
+author: "Lucian Scher"
 date: today
 format:
   pdf:
@@ -30,12 +30,15 @@ knitr::opts_chunk$set(
 
 # Introduction
 
-This exploratory analysis investigates the contradiction between two perspectives on hydropower: 
-(1) hydropower as a renewable, low-carbon climate solution, and (2) hydropower as a source of 
-significant methane emissions and environmental harm. This analysis supports my thesis project on 
-identifying "low-hanging fruits" - hydropower projects with the least environmental impact.
+This exploratoration of of Our World in Data energy data investigates two contradictory perspectives on hydropower:
 
-# Part IV: Data Import, Wrangling, and Exploratory Visualizations
+(1) [hydropower](https://www.usgs.gov/water-science-school/science/hydroelectric-power-advantages-production-and-usage#overview) as a renewable, low-carbon climate solution, and
+
+(2) [hydropower](https://www.internationalrivers.org/news/10-reasons-why-hydropower-dams-are-a-false-climate-solution/) as a source of significant methane emissions and environmental harm.
+
+The goal of this analysis is to support moral justification of my capstone project by realizing the importance of identifying hydropowers "low-hanging fruits".
+
+# Data Import, Wrangling, and Exploratory Visualizations
 
 ## Load Packages
 
@@ -170,7 +173,7 @@ viz1 <- global_trends %>%
 print(viz1)
 ```
 
-**Insight:** Global hydropower generation has grown substantially from ~6,000 TWh in 1965 to over 30,000 TWh by 2020, with a notable jump around 2000. This growth supports Article 1's claim about hydropower's expanding role in energy systems, but also raises Article 2's concern about cumulative environmental impacts from this scale of development.
+**Insight:** Global hydropower generation has grown substantially from \~6,000 TWh in 1965 to over 30,000 TWh by 2020, with a notable jump around 2000. This growth supports Article 1's claim about hydropower's expanding role in energy systems, but also raises Article 2's concern about cumulative environmental impacts from this scale of development.
 
 ## Exploratory Visualization 2: Top Countries by Hydropower Generation
 
@@ -383,10 +386,7 @@ Several patterns emerged from these visualizations:
 
 ## Question 2: Progress on FPM #1 Questions
 
-In FPM #1, I outlined questions about:
-1. How hydropower emissions compare to other energy sources
-2. Whether geographic/climatic factors affect hydropower sustainability
-3. How to identify "least impact" hydropower projects
+In FPM #1, I outlined questions about: 1. How hydropower emissions compare to other energy sources 2. Whether geographic/climatic factors affect hydropower sustainability 3. How to identify "least impact" hydropower projects
 
 **Progress made:**
 
@@ -398,38 +398,38 @@ In FPM #1, I outlined questions about:
 
 **New questions that emerged:**
 
-- How do reservoir age and methane emissions relate? (Article 2's temporal concern)
-- What's the trade-off between energy storage capacity and environmental impact?
-- How do regional energy needs affect the "low-hanging fruit" calculation?
+-   How do reservoir age and methane emissions relate? (Article 2's temporal concern)
+-   What's the trade-off between energy storage capacity and environmental impact?
+-   How do regional energy needs affect the "low-hanging fruit" calculation?
 
 **Next steps:**
 
-1. Integrate thesis data: Once I have FhRED data with sustainability categories, I can create visualizations showing capacity within each category.
-2. Add temporal dimension: Create visualizations showing how reservoir age affects emissions.
-3. Regional analysis: Break down by climate zone to understand biophysical drivers.
+1.  Integrate thesis data: Once I have FhRED data with sustainability categories, I can create visualizations showing capacity within each category.
+2.  Add temporal dimension: Create visualizations showing how reservoir age affects emissions.
+3.  Regional analysis: Break down by climate zone to understand biophysical drivers.
 
 ## Question 3: Anticipated Challenges
 
 **Data wrangling challenges:**
 
-1. **Data integration:** Combining multiple datasets with different temporal coverage and country naming conventions. Some countries may be missing from certain datasets.
+1.  **Data integration:** Combining multiple datasets with different temporal coverage and country naming conventions. Some countries may be missing from certain datasets.
 
-2. **Missing data:** Many countries have missing values, especially for older years or smaller countries. I'll need to decide how to handle these (filter vs. impute).
+2.  **Missing data:** Many countries have missing values, especially for older years or smaller countries. I'll need to decide how to handle these (filter vs. impute).
 
-3. **Scale mismatches:** Per capita data vs. total generation data require careful interpretation. I need to be clear about what I'm comparing.
+3.  **Scale mismatches:** Per capita data vs. total generation data require careful interpretation. I need to be clear about what I'm comparing.
 
 **Visualization challenges:**
 
-1. **Communicating nuance:** The core message - "it depends on which dams" - is complex. I need visualizations that show variation without overwhelming the audience.
+1.  **Communicating nuance:** The core message - "it depends on which dams" - is complex. I need visualizations that show variation without overwhelming the audience.
 
-2. **Multiple dimensions:** My analysis has geography, time, emissions type, and energy source. Showing all simultaneously without creating cluttered plots will be challenging.
+2.  **Multiple dimensions:** My analysis has geography, time, emissions type, and energy source. Showing all simultaneously without creating cluttered plots will be challenging.
 
-3. **Accessibility:** Ensuring colorblind-friendly palettes and clear labels for a general audience.
+3.  **Accessibility:** Ensuring colorblind-friendly palettes and clear labels for a general audience.
 
 **Potential solutions:**
 
-- Use consistent country names across datasets (may need manual cleaning)
-- Filter to countries with complete data for key analyses
-- Create multiple simple visualizations rather than one complex plot
-- Test color palettes with colorblind simulation tools
-- Be transparent about data limitations in captions
+-   Use consistent country names across datasets (may need manual cleaning)
+-   Filter to countries with complete data for key analyses
+-   Create multiple simple visualizations rather than one complex plot
+-   Test color palettes with colorblind simulation tools
+-   Be transparent about data limitations in captions
