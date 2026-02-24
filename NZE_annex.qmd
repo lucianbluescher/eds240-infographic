@@ -1,0 +1,369 @@
+---
+title: "NZE_annex"
+format: html
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(ggforce)
+library(gganimate)
+library(ggalluvial)
+library(scales)
+library(viridis)
+library(plotly)
+library(patchwork) 
+```
+
+```{r}
+nze_raw <- read.csv("data/NZE2021_AnnexA.csv")
+head(nze_raw)
+```
+
+```{r}
+# Filter the data for "Total energy supply" in Flow column
+nze_energy_supply <- nze_raw[nze_raw$Flow == "Total energy supply", ]
+
+```
+
+```{r}
+# Select specific products for the plot
+nze_1 <- nze_energy_supply[
+  nze_energy_supply$Product %in% c("Coal", "Hydro", "Natural gas", "Nuclear", "Solar", "Oil products") &
+  nze_energy_supply$Category %in% c("Energy"), 
+]
+
+nze_h <- nze_raw[nze_raw$Product == "Hydro", ]
+
+nze_a <- nze_h
+```
+
+
+```{r}
+nze_a %>%
+  filter(Product != "Total") %>%
+  ggplot(aes(
+    x = factor(Year),
+    y = Value,
+    color = Product,
+    group = Product
+  )) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  coord_polar() +
+  scale_y_continuous(trans = "sqrt") +
+  theme_void() +
+  labs(title = "Energy Transition Constellation") +
+  theme(legend.position = "right")
+```
+
+```{r}
+nze_a %>%
+  filter(Product != "Total",
+         Year %in% c(2020, 2050)) %>%
+  ggplot(aes(
+    x = factor(Year),
+    y = Value,
+    fill = Product
+  )) +
+  geom_col(width = 0.6) +
+  coord_flip() +
+  scale_fill_viridis_d() +
+  theme_minimal() +
+  labs(
+    title = "Energy Mix Growth: 2020 → 2050",
+    x = NULL,
+    y = "EJ"
+  )
+```
+
+```{r}
+nze_a %>%
+  filter(Product != "Total") %>%
+  group_by(Year) %>%
+  mutate(rank = rank(-Value)) %>%
+  ungroup() %>%
+  ggplot(aes(Year, rank, color = Product)) +
+  geom_line(size = 1.3) +
+  geom_point(size = 2) +
+  scale_y_reverse() +
+  theme_minimal() +
+  labs(
+    title = "Energy Source Rank Over Time",
+    y = "Rank (1 = highest)"
+  )
+```
+
+```{r}
+nze_a %>%
+  filter(Product != "Total") %>%
+  ggplot(aes(
+    x = factor(Year),
+    y = Product,
+    fill = Value
+  )) +
+  geom_tile(color = "white") +
+  scale_fill_viridis(trans = "log10") +
+  theme_minimal() +
+  labs(
+    title = "Energy Transition Matrix",
+    fill = "EJ (log)"
+  )
+```
+
+```{r}
+nze_a %>%
+  filter(Product != "Total") %>%
+  ggplot(aes(
+    x = Product,
+    y = Value,
+    size = Value,
+    color = Product
+  )) +
+  geom_point(alpha = 0.8) +
+  scale_size(range = c(3, 18)) +
+  theme_minimal() +
+  transition_states(
+    Year,
+    transition_length = 2,
+    state_length = 1
+  ) +
+  labs(title = "Year: {closest_state}")
+```
+
+
+```{r}
+# Ensure year is treated consistently
+viz_data <- nze_a %>%
+  mutate(Year = as.integer(Year))
+
+```
+
+```{r}
+matrix_plot <- ggplot(
+  viz_data,
+  aes(
+    x = factor(Year),     # years as discrete columns
+    y = Product,          # energy source rows
+    fill = Value          # color encodes magnitude
+  )
+) +
+  geom_tile(color = "white", linewidth = 0.3) +   # grid cells with separators
+  scale_fill_viridis(
+    trans = "log10",      # log scale to show small + large values
+    name = "EJ (log)"
+  ) +
+  labs(
+    title = "Energy Transition Matrix",
+    subtitle = "Magnitude by source and year"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.title = element_blank(),                 # remove axis titles
+    panel.grid = element_blank(),                 # remove background grid
+    plot.title = element_text(face = "bold")
+  )
+```
+
+```{r}
+constellation_plot <- ggplot(
+  viz_data,
+  aes(
+    x = factor(Year),     # year becomes angular position
+    y = Value,            # distance from center = magnitude
+    group = Product,
+    color = Product
+  )
+) +
+  geom_line(linewidth = 1.1, alpha = 0.9) +        # connect years per source
+  geom_point(size = 2) +                           # emphasize discrete time steps
+  coord_polar() +                                  # convert to radial layout
+  scale_y_continuous(trans = "sqrt") +             # dampen extreme values
+  scale_color_viridis_d(guide = "none") +           # clean palette, no legend
+  labs(
+    title = "Energy Constellation",
+    subtitle = "Radial growth trajectories"
+  ) +
+  theme_void() +                                   # remove axes & background
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+```{r}
+ranking_plot <- viz_data %>%
+  group_by(Year) %>%                               # rank within each year
+  mutate(rank = rank(-Value, ties.method = "first")) %>%
+  ungroup() %>%
+  ggplot(
+    aes(
+      x = Year,
+      y = rank,
+      color = Product
+    )
+  ) +
+  geom_line(linewidth = 1.2) +                      # rank trajectories
+  geom_point(size = 2) +
+  scale_y_reverse(breaks = 1:10) +                  # rank 1 at top
+  scale_color_viridis_d(guide = "none") +
+  labs(
+    title = "Source Ranking",
+    subtitle = "Relative position by year",
+    y = "Rank"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.title.x = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+```{r}
+growth_plot <- viz_data %>%
+  filter(Year %in% c(2020, 2050)) %>%               # focus on start vs end
+  ggplot(
+    aes(
+      x = Product,
+      y = Value,
+      fill = factor(Year)
+    )
+  ) +
+  geom_col(
+    position = position_dodge(width = 0.7),         # side-by-side bars
+    width = 0.6
+  ) +
+  coord_flip() +                                    # horizontal for readability
+  scale_fill_viridis_d(name = "Year") +
+  labs(
+    title = "Mix Growth",
+    subtitle = "2020 vs 2050",
+    y = "EJ"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.title.x = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+```{r}
+final_infographic <-
+  (matrix_plot | constellation_plot) /             # top row
+  (ranking_plot | growth_plot) +                    # bottom row
+  plot_annotation(
+    title = "Energy System Transition (Net Zero Pathway)",
+    subtitle = "Structure, growth, ranking, and composition over time",
+    theme = theme(
+      plot.title = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(size = 11)
+    )
+  )
+
+# Render the figure
+final_infographic
+```
+
+# Hydropower-specific visualizations
+
+```{r}
+hydro_time_plot <- ggplot(
+  nze_h,
+  aes(
+    x = Year,                                      # time on x-axis
+    y = Value,                                     # magnitude
+    color = Flow                                   # different system roles
+  )
+) +
+  geom_line(linewidth = 1.3) +                     # growth trajectories
+  geom_point(size = 2) +                           # emphasize year points
+  scale_color_viridis_d() +                        # readable, colorblind-safe
+  labs(
+    title = "Hydropower Growth Over Time",
+    subtitle = "By role in the energy system",
+    y = "Value (unit depends on flow)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    axis.title.x = element_blank()
+  )
+```
+
+```{r}
+hydro_flow_mix <- ggplot(
+  nze_h,
+  aes(
+    x = factor(Year),                              # discrete years
+    y = Value,
+    fill = Flow                                   # stack by system role
+  )
+) +
+  geom_col(width = 0.7) +                          # stacked bars
+  scale_fill_viridis_d() +
+  labs(
+    title = "Hydropower System Role",
+    subtitle = "Contribution by flow",
+    y = "Value"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.title.x = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+```{r}
+hydro_growth_multiple <- nze_h %>%
+  filter(Year %in% c(2020, 2050)) %>%              # compare start vs end
+  pivot_wider(
+    names_from = Year,
+    values_from = Value
+  ) %>%                                            # wide format for ratio
+  mutate(
+    growth_multiple = `2050` / `2020`              # compute scaling factor
+  ) %>%
+  ggplot(
+    aes(
+      x = Flow,
+      y = growth_multiple,
+      fill = Flow
+    )
+  ) +
+  geom_col(width = 0.6, show.legend = FALSE) +
+  coord_flip() +                                   # readable labels
+  scale_fill_viridis_d() +
+  scale_y_continuous(
+    labels = label_number(suffix = "×")            # show as multiplier
+  ) +
+  labs(
+    title = "Required Hydro Scaling by 2050",
+    subtitle = "2050 relative to 2020"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.title = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+```{r}
+hydro_infographic <-
+  hydro_time_plot /                               # top: growth trajectories
+  (hydro_flow_mix | hydro_growth_multiple) +      # bottom: role + scaling
+  plot_annotation(
+    title = "Hydropower in a Net Zero by 2050 Pathway",
+    subtitle = "How much hydro must grow, and where it matters in the system",
+    theme = theme(
+      plot.title = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(size = 11)
+    )
+  )
+
+# Render the final figure
+hydro_infographic
+```
+

@@ -13,3 +13,11 @@ summary(per_capita_energy_stacked)
 summary(per_capita_greenhouse_gas_emissions)
 summary(per_capita_methane_emissions)
 summary(share_electricity_hydro)
+
+
+
+# Dam emissions vs Fossil fuel emissions over time 
+# per kwh of energy units
+# 
+# Dam should start high and go low
+# FF should stay relatively even ??

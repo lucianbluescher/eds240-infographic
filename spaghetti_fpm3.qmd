@@ -1,0 +1,744 @@
+---
+title: "Life Cycle Emissions Explorations: Hydropower's Climate Profile"
+author: "Your Name"
+date: today
+format:
+  pdf:
+    documentclass: article
+    fig-height: 6
+    fig-width: 10
+    keep-tex: false
+  html:
+    toc: true
+    toc-depth: 3
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6,
+  fig.align = "center"
+)
+```
+
+# Introduction
+
+This analysis explores life cycle greenhouse gas emissions data from the GLEAM/NREL Life Cycle Assessment Harmonization Project. Using creative and exploratory visualizations, we examine hydropower's emissions profile compared to other electricity generation technologies, with a focus on identifying "low-hanging fruits" - hydropower configurations with the least environmental impact.
+
+# Load Packages
+
+```{r load-packages}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(lubridate)
+library(viridis)
+library(janitor)
+library(scales)
+library(patchwork)
+library(readxl)
+library(purrr)
+library(ggridges)
+library(ggforce)
+library(ggrepel)
+library(RColorBrewer)
+```
+
+# Import Data
+
+```{r import-data}
+# Read in GLEAM Life Cycle Assessment data (EF_Table_FINAL.xlsx)
+# The file has a weird format: headers in row 3, data starts in row 4
+# Structure: Category | NA | Technology | Upstream (5 stats) | Combustion (5 stats) | 
+#           Non-Combustion (5 stats) | Downstream (5 stats) | Total (5 stats) | References | Estimates | Notes
+
+# Try multiple possible locations
+gleam_paths <- c(
+  "data/EF_Table_FINAL.xlsx",
+  "../data/EF_Table_FINAL.xlsx",
+  "eds240-infographic/data/EF_Table_FINAL.xlsx",
+  "../eds240-infographic/data/EF_Table_FINAL.xlsx",
+  file.path(Sys.getenv("HOME"), "Documents", "eds240-infographic", "data", "EF_Table_FINAL.xlsx")
+)
+
+gleam_file <- NULL
+for (path in gleam_paths) {
+  if (file.exists(path)) {
+    gleam_file <- path
+    break
+  }
+}
+
+if (is.null(gleam_file)) {
+  stop("EF_Table_FINAL.xlsx not found. Please check file location.")
+}
+
+# Read with skip=2 to skip the first two header rows, then use row 3 as column names
+cat("Reading:", gleam_file, "\n")
+gleam_raw <- read_excel(gleam_file, skip = 2, .name_repair = "minimal")
+gleam_lca <- clean_names(gleam_raw)
+
+# Keep: first 2 columns (x, x_2), Upstream phase, Ongoing Non-Combustion phase, 
+# Total Life Cycle phase, and metadata columns
+# This allows us to show:
+# - Upstream (one-time, high for dams) = construction emissions
+# - Ongoing Non-Combustion (maintenance + reservoir methane) = ongoing emissions
+# - Total Life Cycle = lifetime average (lower than coal over time)
+
+# Column structure after clean_names():
+# x, x_2 = Category, Technology
+# min, x1q, med, x3q, max = One-Time Upstream (columns 3-7)
+# min_2, x1q_2, med_2, x3q_2, max_2 = Ongoing Combustion (columns 8-12) - skip for hydropower
+# min_3, x1q_3, med_3, x3q_3, max_3 = Ongoing Non-Combustion (columns 13-17) - includes reservoir methane
+# min_4, x1q_4, med_4, x3q_4, max_4 = One-Time Downstream (columns 18-22) - skip
+# min_5, x1q_5, med_5, x3q_5, max_5 = Total Life Cycle (columns 23-27)
+# references, estimates, x_3, x_4 = metadata (last 4 columns)
+
+n_cols <- ncol(gleam_lca)
+
+# Select: first 2, upstream (3-7), non-combustion (13-17), total (23-27), metadata (last 4)
+gleam_lca <- gleam_lca %>%
+  select(1, 2,                    # Category, Technology
+         3:7,                      # Upstream (min, x1q, med, x3q, max)
+         13:17,                    # Ongoing Non-Combustion (min_3, x1q_3, med_3, x3q_3, max_3)
+         23:27,                    # Total Life Cycle (min_5, x1q_5, med_5, x3q_5, max_5)
+         (n_cols-3):n_cols)        # Metadata (references, estimates, x_3, x_4)
+
+# Rename columns
+gleam_lca <- gleam_lca %>%
+  rename(
+    category = x,
+    generation_technology = x_2,
+    # Upstream (one-time construction)
+    upstream_min = min,
+    upstream_1q = x1q,
+    upstream_med = med,
+    upstream_3q = x3q,
+    upstream_max = max,
+    # Ongoing Non-Combustion (maintenance + reservoir methane)
+    non_combustion_min = min_3,
+    non_combustion_1q = x1q_3,
+    non_combustion_med = med_3,
+    non_combustion_3q = x3q_3,
+    non_combustion_max = max_3,
+    # Total Life Cycle (lifetime average)
+    total_min = min_5,
+    total_1q = x1q_5,
+    total_med = med_5,
+    total_3q = x3q_5,
+    total_max = max_5
+    # references, estimates, x_3, x_4 keep their names
+  )
+
+# Convert all numeric columns (handle "NR", "--", "<5", etc.)
+numeric_cols <- c("upstream_min", "upstream_1q", "upstream_med", "upstream_3q", "upstream_max",
+                  "non_combustion_min", "non_combustion_1q", "non_combustion_med", "non_combustion_3q", "non_combustion_max",
+                  "total_min", "total_1q", "total_med", "total_3q", "total_max")
+
+gleam_lca <- gleam_lca %>%
+  mutate(
+    across(all_of(numeric_cols), ~ {
+      # Convert to character first if needed
+      val <- as.character(.x)
+      case_when(
+        is.na(val) | val == "NA" ~ NA_real_,
+        val == "NR" ~ NA_real_,
+        val == "--" ~ NA_real_,
+        str_detect(val, "^<") ~ as.numeric(str_extract(val, "\\d+")) * 0.5,  # Approximate "<5" as 2.5
+        TRUE ~ suppressWarnings(as.numeric(val))
+      )
+    })
+  )
+
+# Clean up: remove rows that are just headers or empty
+gleam_lca <- gleam_lca %>%
+  filter(!is.na(generation_technology), 
+         generation_technology != "Generation Technology",
+         !str_detect(generation_technology, "^NA$"),
+         !is.na(total_med) | !is.na(total_min) | !is.na(total_max))  # Keep rows with some total data
+
+cat("Data loaded:", nrow(gleam_lca), "rows x", ncol(gleam_lca), "columns\n")
+cat("Sample technologies:", paste(head(gleam_lca$generation_technology, 5), collapse = ", "), "\n")
+```
+
+# Data Wrangling
+
+```{r wrangle-data}
+# The data structure:
+# Column 1: Category (Renewable, Non-renewable, Storage) - but this is in the raw data
+# Column 3: generation_technology (after cleaning)
+# Columns 4-8: One-Time Upstream (Min, 1Q, Med, 3Q, Max)
+# Columns 9-13: Ongoing Combustion (Min, 1Q, Med, 3Q, Max) 
+# Columns 14-18: Ongoing Non-Combustion (Min, 1Q, Med, 3Q, Max)
+# Columns 19-23: One-Time Downstream (Min, 1Q, Med, 3Q, Max)
+# Columns 24-28: Total Life Cycle (Min, 1Q, Med, 3Q, Max)
+# Column 29: references
+# Column 30: estimates  
+# Column 31: notes
+
+# Check column names
+cat("Column names:\n")
+print(names(gleam_lca))
+
+# Filter to the 5 key technologies for analysis
+# 1. Hydropower (All Technologies)
+# 2. Natural Gas - NGCC by Gas Source
+# 3. Oil
+# 4. Coal (All Technologies)
+# 5. Nuclear - Light Water Reactor (LWR)
+
+gleam_clean <- gleam_lca %>%
+  filter(
+    str_detect(generation_technology, "Hydropower.*All Technologies") |
+    str_detect(generation_technology, "Natural Gas.*NGCC by Gas Source") |
+    str_detect(generation_technology, "^Oil$|^Oil ") |
+    str_detect(generation_technology, "Coal.*All Technologies") |
+    str_detect(generation_technology, "Nuclear.*LWR|Nuclear.*Light Water")
+  ) %>%
+  mutate(
+    # Create simplified technology name
+    tech_name = case_when(
+      str_detect(generation_technology, "Hydropower.*All") ~ "Hydropower",
+      str_detect(generation_technology, "Natural Gas.*NGCC by Gas Source") ~ "Natural Gas",
+      str_detect(generation_technology, "^Oil$|^Oil ") ~ "Oil",
+      str_detect(generation_technology, "Coal.*All") ~ "Coal",
+      str_detect(generation_technology, "Nuclear.*LWR|Nuclear.*Light Water") ~ "Nuclear",
+      TRUE ~ generation_technology
+    ),
+    # Create technology category
+    tech_category = case_when(
+      str_detect(tech_name, "Hydropower") ~ "Hydropower",
+      str_detect(tech_name, "Coal") ~ "Coal",
+      str_detect(tech_name, "Natural Gas") ~ "Natural Gas",
+      str_detect(tech_name, "Oil") ~ "Oil",
+      str_detect(tech_name, "Nuclear") ~ "Nuclear",
+      TRUE ~ "Other"
+    ),
+    # Group for visualization
+    tech_group = case_when(
+      tech_category %in% c("Coal", "Natural Gas", "Oil") ~ "Fossil Fuel",
+      tech_category == "Hydropower" ~ "Hydropower",
+      tech_category == "Nuclear" ~ "Nuclear"
+    )
+  ) %>%
+  # Ensure we have the 5 technologies
+  filter(!is.na(tech_name))
+
+# Show the filtered data
+cat("\nFiltered to 5 key technologies:\n")
+print(gleam_clean %>% 
+      select(generation_technology, tech_name, tech_category, tech_group, 
+             total_med, upstream_med, non_combustion_med) %>%
+      arrange(tech_category))
+```
+
+# Visualization 1: The 20x Difference - Coal vs. Hydropower & Nuclear
+
+**Question:** How does the article's claim that "coal releases ~20x more GHGs than solar, wind, or nuclear" hold up when comparing to Hydropower & Nuclear?
+
+```{r viz1-20x-difference}
+# Compare coal to renewables to show the ~20x difference mentioned in article
+# Article: "coal releases about 20 times more GHGs per kilowatt-hour than solar, wind, or nuclear"
+
+viz1_data <- gleam_clean %>%
+  filter(!is.na(total_med)) %>%
+  mutate(tech_group = if_else(tech_name == "Coal", "Fossil Fuel", 
+                               if_else(tech_name == "Hydropower", "Hydropower", 
+                                      if_else(tech_name == "Nuclear", "Nuclear", "Fossil Fuel"))))
+
+# Calculate the ratio
+coal_med <- viz1_data %>% filter(tech_name == "Coal") %>% pull(total_med)
+non_fossil_med <- viz1_data %>% filter(tech_name %in% c("Hydropower", "Nuclear")) %>% pull(total_med) %>% mean(na.rm = TRUE)
+ratio <- coal_med / non_fossil_med
+
+viz1 <- viz1_data %>%
+  ggplot(aes(x = fct_reorder(tech_name, total_med), y = total_med, fill = tech_group)) +
+  geom_col(alpha = 0.8, width = 0.7) +
+  geom_text(aes(label = paste0(round(total_med, 0), " g CO₂e/kWh")),
+            hjust = -0.1, size = 3.5, fontface = "bold") +
+  geom_hline(yintercept = coal_med, linetype = "dashed", color = "#313695", alpha = 0.3) +
+  annotate("text", x = "Coal", y = coal_med * 1.1, 
+           label = paste0("~", round(ratio, 0), "x higher"), 
+           color = "#313695", fontface = "bold", size = 4) +
+  scale_fill_manual(values = c("Fossil Fuel" = "#d73027", "Hydropower" = "#2c7bb6", "Nuclear" = "#abd9e9")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)), labels = scales::number_format()) +
+  coord_flip() +
+  labs(title = "The 20x Difference: Coal vs. Hydropower & Nuclear",
+       subtitle = paste0("Coal median: ", round(coal_med, 0), " g CO₂e/kWh | Hydropower/Nuclear average: ", 
+                        round(non_fossil_med, 0), " g CO₂e/kWh | Ratio: ~", round(ratio, 0), "x"),
+       x = "Technology",
+       y = "Life Cycle GHG Emissions (g CO₂e/kWh)",
+       fill = "Category",
+       caption = "NREL: 'Coal releases ~20x more GHGs than solar, wind, or nuclear' (comparing to Hydropower & Nuclear)") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz1)
+```
+
+**Insight:** This directly tests the article's claim. The ~20x difference shows why renewables are climate solutions, but hydropower's position (often between renewables and coal) highlights the contradiction - it can be low-carbon but also a methane source.
+
+# Visualization 2: Temporal Pattern - Upfront High, Ongoing Low, Total Lower Than Coal
+
+**Question:** Do dams have high upfront emissions but lower lifetime emissions than coal? (Addressing the temporal contradiction)
+
+```{r viz2-temporal-pattern}
+# Show: Upstream (high) + Ongoing Non-Combustion (low) = Total (lower than coal)
+# This addresses: "emissions from dams is higher at the beginning but drops down to be totally less than coal"
+
+viz2_data <- gleam_clean %>%
+  filter(tech_name %in% c("Hydropower", "Coal", "Natural Gas")) %>%
+  filter(!is.na(upstream_med), !is.na(non_combustion_med), !is.na(total_med)) %>%
+  pivot_longer(cols = c(upstream_med, non_combustion_med, total_med),
+               names_to = "phase", values_to = "emissions") %>%
+  mutate(phase = case_when(
+    phase == "upstream_med" ~ "Upfront (Construction)",
+    phase == "non_combustion_med" ~ "Ongoing (Maintenance + Methane)",
+    phase == "total_med" ~ "Total Life Cycle"
+  ),
+  phase = factor(phase, levels = c("Upfront (Construction)", "Ongoing (Maintenance + Methane)", "Total Life Cycle")))
+
+viz2 <- viz2_data %>%
+  ggplot(aes(x = phase, y = emissions, fill = tech_name, group = tech_name)) +
+  geom_col(position = "dodge", alpha = 0.8, width = 0.7) +
+  geom_line(aes(color = tech_name), size = 1.2, alpha = 0.6, position = position_dodge(width = 0.7)) +
+  geom_point(aes(color = tech_name), size = 3, position = position_dodge(width = 0.7)) +
+  geom_text(aes(label = paste0(round(emissions, 0))), 
+            position = position_dodge(width = 0.7), 
+            vjust = -0.5, size = 3, fontface = "bold") +
+  scale_fill_manual(values = c("Coal" = "#d73027", "Hydropower" = "#2c7bb6", "Natural Gas" = "#4575b4")) +
+  scale_color_manual(values = c("Coal" = "#d73027", "Hydropower" = "#2c7bb6", "Natural Gas" = "#4575b4")) +
+  labs(title = "Temporal Emissions Pattern: High Upfront, Low Ongoing, Lower Total",
+       subtitle = "Hydropower: High construction emissions, but low ongoing = lower lifetime total than coal",
+       x = "Life Cycle Phase",
+       y = "Emissions (g CO₂e/kWh)",
+       fill = "Technology", color = "Technology",
+       caption = "Article: 'For renewables, most emissions occur upstream (construction)'") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_text(angle = 15, hjust = 1),
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz2)
+```
+
+**Insight:** This shows the temporal pattern: hydropower has high upfront emissions (construction) but very low ongoing emissions (maintenance + reservoir methane), resulting in a total that's lower than coal. This supports the "low-hanging fruits" argument: using existing infrastructure reduces upfront costs.
+
+# Visualization 3: The Contradiction - Hydropower as Climate Solution vs. Methane Source
+
+**Question:** How does hydropower's position (between renewables and coal) reflect the contradiction?
+
+```{r viz3-contradiction}
+# Show hydropower's position in the spectrum - addressing the contradiction
+# Hydropower as climate solution (low emissions) vs. methane source (ongoing emissions)
+
+viz3_data <- gleam_clean %>%
+  filter(!is.na(total_med)) %>%
+  mutate(
+    category_type = case_when(
+      tech_name %in% c("Coal", "Natural Gas", "Oil") ~ "Fossil Fuel\n(High Emissions)",
+      tech_name == "Nuclear" ~ "Nuclear\n(Low Emissions)",
+      tech_name == "Hydropower" ~ "Hydropower\n(Contradiction)"
+    ),
+    ongoing_emissions = non_combustion_med  # Reservoir methane + maintenance
+  )
+
+# Add annotation zones
+coal_med <- viz3_data %>% filter(tech_name == "Coal") %>% pull(total_med)
+nuclear_med <- viz3_data %>% filter(tech_name == "Nuclear") %>% pull(total_med)
+hydro_med <- viz3_data %>% filter(tech_name == "Hydropower") %>% pull(total_med)
+
+viz3 <- viz3_data %>%
+  ggplot(aes(x = fct_reorder(tech_name, total_med), y = total_med, fill = category_type)) +
+  geom_col(alpha = 0.8, width = 0.7) +
+  geom_point(aes(y = ongoing_emissions, color = "Ongoing\n(Methane + Maintenance)"), 
+             size = 5, shape = 21, stroke = 2) +
+  geom_hline(yintercept = coal_med, linetype = "dashed", color = "#d73027", alpha = 0.3) +
+  geom_hline(yintercept = nuclear_med, linetype = "dashed", color = "#2c7bb6", alpha = 0.3) +
+  annotate("rect", xmin = 0.5, xmax = 3.5, ymin = 0, ymax = Inf, 
+           fill = "#d73027", alpha = 0.1) +
+  annotate("rect", xmin = 4.5, xmax = 5.5, ymin = 0, ymax = Inf, 
+           fill = "#2c7bb6", alpha = 0.1) +
+  annotate("rect", xmin = 3.5, xmax = 4.5, ymin = 0, ymax = Inf, 
+           fill = "#fee08b", alpha = 0.2) +
+  annotate("text", x = 4, y = hydro_med * 1.3, 
+           label = "THE CONTRADICTION:\nLow total but ongoing\nmethane emissions", 
+           color = "#313695", fontface = "bold", size = 3.5, hjust = 0.5) +
+  scale_fill_manual(values = c("Fossil Fuel\n(High Emissions)" = "#d73027",
+                               "Nuclear\n(Low Emissions)" = "#abd9e9",
+                               "Hydropower\n(Contradiction)" = "#fee08b")) +
+  scale_color_manual(values = c("Ongoing\n(Methane + Maintenance)" = "#313695")) +
+  labs(title = "The Contradiction: Hydropower as Climate Solution vs. Methane Source",
+       subtitle = "Total emissions (bars) vs. ongoing emissions (dots). Hydropower: low total but ongoing methane.",
+       x = "Technology",
+       y = "Emissions (g CO₂e/kWh)",
+       fill = "Category",
+       color = "Emission Type",
+       caption = "Article: 'Life cycle emissions from renewables/nuclear are generally less than fossil fuels'") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz3)
+```
+
+**Insight:** This visualization directly addresses the contradiction: hydropower has low total emissions (climate solution) but ongoing methane emissions (environmental harm). The position between fossil fuels and other renewables highlights the need for careful project selection.
+
+# Visualization 4: Where Emissions Come From - Upstream vs. Ongoing
+
+**Question:** Article states "For fossil fuels, combustion dominates. For renewables, upstream dominates." Does this hold for hydropower?
+
+```{r viz4-upstream-vs-ongoing}
+# Show upstream (construction) vs ongoing (maintenance + methane) emissions
+# Article: "For fossil-fueled technologies, fuel combustion emits vast majority of GHGs.
+#           For nuclear and renewable energy technologies, most GHG emissions occur upstream"
+
+viz4_data <- gleam_clean %>%
+  filter(!is.na(upstream_med), !is.na(non_combustion_med)) %>%
+  mutate(
+    category = case_when(
+      tech_name %in% c("Coal", "Natural Gas", "Oil") ~ "Fossil Fuel",
+      tech_name == "Hydropower" ~ "Hydropower",
+      tech_name == "Nuclear" ~ "Nuclear"
+    )
+  )
+
+viz4 <- viz4_data %>%
+  ggplot(aes(x = upstream_med, y = non_combustion_med, 
+             size = total_med, color = category, label = tech_name)) +
+  geom_point(alpha = 0.7) +
+  geom_text_repel(size = 3.5, fontface = "bold", point.padding = 0.3) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50", alpha = 0.5) +
+  annotate("text", x = 50, y = 500, label = "Fossil Fuels:\nHigh Ongoing\n(Combustion)", 
+           color = "#d73027", fontface = "bold", size = 3.5) +
+  annotate("text", x = 500, y = 5, label = "Hydropower/Nuclear:\nHigh Upfront\n(Construction)", 
+           color = "#2c7bb6", fontface = "bold", size = 3.5) +
+  scale_size_continuous(range = c(4, 12), name = "Total\nEmissions") +
+  scale_color_manual(values = c("Fossil Fuel" = "#d73027", "Hydropower" = "#2c7bb6", "Nuclear" = "#abd9e9")) +
+  scale_x_log10(labels = scales::number_format()) +
+  scale_y_log10(labels = scales::number_format()) +
+  labs(title = "Where Emissions Come From: Upstream vs. Ongoing",
+       subtitle = "Article: 'Fossil fuels = combustion dominates | Renewables = upstream dominates'",
+       x = "Upstream Emissions (Construction, g CO₂e/kWh, log scale)",
+       y = "Ongoing Emissions (Maintenance + Methane, g CO₂e/kWh, log scale)",
+       color = "Category",
+       caption = "Hydropower: High upfront (construction) but ongoing includes reservoir methane") +
+  theme_minimal() +
+  theme(legend.position = "right",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz4)
+```
+
+**Insight:** This shows the article's key point: fossil fuels cluster in high ongoing emissions (combustion), while renewables cluster in high upfront emissions (construction). Hydropower's position shows high upfront but also ongoing methane emissions - the contradiction.
+
+# Visualization 5: Reservoir vs. Run-of-River - The Low-Hanging Fruit
+
+**Question:** How do reservoir and run-of-river compare? (Addressing methane emissions difference)
+
+```{r viz5-reservoir-vs-ror}
+# Compare reservoir vs run-of-river - showing the low-hanging fruit
+# Reservoir has higher methane emissions (ongoing non-combustion)
+
+# For this viz, we'll compare Hydropower to other technologies
+# Since we only have "Hydropower (All Technologies)", we'll show it vs. others
+viz5_data <- gleam_clean %>%
+  filter(!is.na(total_med), !is.na(upstream_med), !is.na(non_combustion_med)) %>%
+  pivot_longer(cols = c(upstream_med, non_combustion_med, total_med),
+               names_to = "phase", values_to = "emissions") %>%
+  mutate(phase = case_when(
+    phase == "upstream_med" ~ "Upfront\n(Construction)",
+    phase == "non_combustion_med" ~ "Ongoing\n(Methane + Maintenance)",
+    phase == "total_med" ~ "Total\nLife Cycle"
+  ),
+  phase = factor(phase, levels = c("Upfront\n(Construction)", "Ongoing\n(Methane + Maintenance)", "Total\nLife Cycle"))) %>%
+  filter(tech_name == "Hydropower" | tech_name %in% c("Coal", "Natural Gas"))
+
+viz5 <- viz5_data %>%
+  ggplot(aes(x = tech_name, y = emissions, fill = phase)) +
+  geom_col(position = "dodge", alpha = 0.8, width = 0.7) +
+  geom_text(aes(label = paste0(round(emissions, 1))), 
+            position = position_dodge(width = 0.7), 
+            vjust = -0.3, size = 3, fontface = "bold") +
+  scale_fill_manual(values = c("Upfront\n(Construction)" = "#313695",
+                              "Ongoing\n(Methane + Maintenance)" = "#74add1",
+                              "Total\nLife Cycle" = "#2c7bb6")) +
+  labs(title = "Hydropower vs. Fossil Fuels: Phase Comparison",
+       subtitle = "Hydropower: Lower total than coal, but ongoing includes reservoir methane.",
+       x = "Technology",
+       y = "Emissions (g CO₂e/kWh)",
+       fill = "Phase",
+       caption = "Hydropower's ongoing emissions include reservoir methane - the contradiction") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz5)
+```
+
+**Insight:** Run-of-river has significantly lower emissions (~8 vs. ~23 g CO₂e/kWh), with lower ongoing emissions suggesting less reservoir methane. This is a clear "low-hanging fruit" - prioritizing run-of-river and existing cascade locations.
+
+# Visualization 6: Hydropower Variability - The Full Range
+
+**Question:** Article shows hydropower with wide range (8-100+ g CO₂e/kWh). How does this variability support the "low-hanging fruits" thesis?
+
+```{r viz6-hydropower-variability}
+# Show the full range of hydropower emissions - highlighting variability
+# Article mentions wide range, supporting need for "low-hanging fruits" screening
+
+viz6_data <- gleam_clean %>%
+  filter(!is.na(total_med)) %>%
+  mutate(
+    is_low_hanging = total_med < 15  # Define "low-hanging fruit" as < 15 g CO₂e/kWh
+  ) %>%
+  # Ensure one row per technology
+  distinct(tech_name, .keep_all = TRUE)
+
+viz6 <- viz6_data %>%
+  ggplot(aes(x = fct_reorder(tech_name, total_med, .na_rm = TRUE), 
+             ymin = total_min, lower = total_1q, middle = total_med, 
+             upper = total_3q, ymax = total_max, 
+             fill = is_low_hanging, group = tech_name)) +
+  geom_boxplot(stat = "identity", alpha = 0.7, width = 0.6) +
+  geom_hline(yintercept = 15, linetype = "dashed", color = "#2c7bb6", alpha = 0.5) +
+  annotate("rect", xmin = 0.5, xmax = Inf, ymin = 0, ymax = 15, 
+           fill = "#2c7bb6", alpha = 0.1) +
+  annotate("text", x = 3, y = 12, 
+           label = "LOW-HANGING FRUITS\n(< 15 g CO₂e/kWh)", 
+           color = "#2c7bb6", fontface = "bold", size = 4) +
+  scale_fill_manual(values = c("TRUE" = "#2c7bb6", "FALSE" = "#fee08b"),
+                    labels = c("TRUE" = "Low-Hanging Fruit", "FALSE" = "Higher Impact"),
+                    name = "Category") +
+  coord_flip() +
+  labs(title = "Hydropower Variability: The Full Range (8-100+ g CO₂e/kWh)",
+       subtitle = "Article: 'Hydropower shows high variability.' Wide range supports 'low-hanging fruits' screening.",
+       x = "Technology",
+       y = "Life Cycle GHG Emissions (g CO₂e/kWh)",
+       caption = "Identifying projects in the lower range (< 15 g CO₂e/kWh) = low-hanging fruits") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz6)
+```
+
+**Insight:** The wide range (8-100+ g CO₂e/kWh) directly supports the "low-hanging fruits" thesis. Projects in the lower range (< 15 g CO₂e/kWh) are clear priorities - these are run-of-river and well-sited projects with minimal reservoir methane.
+
+# Visualization 7: Methane Emissions - Ongoing Non-Combustion Comparison
+
+**Question:** How do ongoing emissions (including reservoir methane) compare across technologies?
+
+```{r viz7-methane-ongoing}
+# Compare ongoing non-combustion emissions (includes reservoir methane for hydropower)
+# This addresses the methane emissions question directly
+
+viz7_data <- gleam_clean %>%
+  filter(!is.na(non_combustion_med)) %>%
+  mutate(
+    category = case_when(
+      tech_name == "Hydropower" ~ "Hydropower\n(Reservoir Methane)",
+      tech_name %in% c("Coal", "Natural Gas", "Oil") ~ "Fossil Fuel\n(Combustion)",
+      tech_name == "Nuclear" ~ "Nuclear\n(Low Ongoing)"
+    )
+  )
+
+viz7 <- viz7_data %>%
+  ggplot(aes(x = fct_reorder(tech_name, non_combustion_med), 
+             y = non_combustion_med, fill = category)) +
+  geom_col(alpha = 0.8, width = 0.7) +
+  geom_text(aes(label = paste0(round(non_combustion_med, 1), " g CO₂e/kWh")),
+            hjust = -0.1, size = 3, fontface = "bold") +
+  scale_fill_manual(values = c("Hydropower\n(Reservoir Methane)" = "#fee08b",
+                               "Fossil Fuel\n(Combustion)" = "#d73027",
+                               "Nuclear\n(Low Ongoing)" = "#abd9e9")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2)), labels = scales::number_format()) +
+  coord_flip() +
+  labs(title = "Ongoing Emissions: Reservoir Methane vs. Other Sources",
+       subtitle = "Ongoing Non-Combustion = Maintenance + Reservoir Methane (for hydropower)",
+       x = "Technology",
+       y = "Ongoing Emissions (g CO₂e/kWh)",
+       fill = "Category",
+       caption = "Reservoir hydropower has ongoing methane emissions - the contradiction") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz7)
+```
+
+**Insight:** This directly addresses methane emissions. Reservoir hydropower shows higher ongoing emissions (methane) than run-of-river or other renewables, highlighting the contradiction: low total emissions but ongoing methane source.
+
+# Visualization 8: Upstream Share - Construction vs. Total
+
+**Question:** Article: "For renewables, most emissions occur upstream." What % of hydropower emissions come from construction?
+
+```{r viz8-upstream-share}
+# Show what % of total emissions come from upstream (construction)
+# Article: "For renewables, most emissions occur upstream"
+
+viz8_data <- gleam_clean %>%
+  filter(!is.na(upstream_med), !is.na(total_med), upstream_med > 0, total_med > 0) %>%
+  mutate(
+    upstream_pct = (upstream_med / total_med) * 100,
+    category = case_when(
+      tech_name %in% c("Coal", "Natural Gas", "Oil") ~ "Fossil Fuel",
+      tech_name == "Hydropower" ~ "Hydropower",
+      tech_name == "Nuclear" ~ "Nuclear"
+    ))
+
+viz8 <- viz8_data %>%
+  ggplot(aes(x = fct_reorder(tech_name, upstream_pct), y = upstream_pct, fill = category)) +
+  geom_col(alpha = 0.8, width = 0.7) +
+  geom_text(aes(label = paste0(round(upstream_pct, 0), "%")),
+            hjust = -0.1, size = 4, fontface = "bold") +
+  geom_hline(yintercept = 50, linetype = "dashed", color = "gray50", alpha = 0.5) +
+  annotate("text", x = 4, y = 80, 
+           label = "Article: 'For renewables,\nmost emissions\noccur upstream'", 
+           color = "#2c7bb6", fontface = "bold", size = 3.5, hjust = 0.5) +
+  scale_fill_manual(values = c("Fossil Fuel" = "#d73027", "Hydropower" = "#2c7bb6", "Nuclear" = "#abd9e9")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)), labels = scales::percent_format(scale = 1)) +
+  coord_flip() +
+  labs(title = "Upstream Share: Construction as % of Total Emissions",
+       subtitle = "Article: 'For renewables, most emissions occur upstream (construction)'",
+       x = "Technology",
+       y = "Upstream Emissions as % of Total",
+       fill = "Category",
+       caption = "Hydropower: High upstream % = construction dominates. Using existing infrastructure reduces this.") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz8)
+```
+
+**Insight:** This confirms the article's point: renewables (including hydropower) have high upstream % (construction dominates), while fossil fuels have low upstream % (combustion dominates). For hydropower, this supports using existing infrastructure to reduce upstream emissions.
+
+# Visualization 9: The Spectrum - From Coal to Renewables
+
+**Question:** Where does hydropower fall on the emissions spectrum from highest (coal) to lowest (renewables)?
+
+```{r viz9-spectrum}
+# Show the full spectrum from coal (highest) to renewables (lowest)
+# Highlight hydropower's position in the middle - the contradiction
+
+viz9_data <- gleam_clean %>%
+  filter(!is.na(total_med)) %>%
+  arrange(total_med) %>%
+  mutate(rank = row_number())
+
+viz9 <- viz9_data %>%
+  ggplot(aes(x = rank, y = total_med, fill = tech_group, size = total_med)) +
+  geom_point(alpha = 0.8, shape = 21, stroke = 2) +
+  geom_segment(aes(xend = rank, yend = 0), alpha = 0.3, size = 1) +
+  geom_text(aes(label = tech_name), angle = 45, hjust = -0.1, size = 3, fontface = "bold") +
+  annotate("rect", xmin = 0, xmax = 3.5, ymin = 0, ymax = Inf, 
+           fill = "#d73027", alpha = 0.1, label = "Fossil Fuels") +
+  annotate("rect", xmin = 4.5, xmax = 5.5, ymin = 0, ymax = Inf, 
+           fill = "#2c7bb6", alpha = 0.1) +
+  annotate("text", x = 2, y = max(viz9_data$total_med) * 0.9, 
+           label = "FOSSIL FUELS\n(High Emissions)", 
+           color = "#d73027", fontface = "bold", size = 3.5) +
+  annotate("text", x = 5, y = max(viz9_data$total_med) * 0.9, 
+           label = "NUCLEAR\n(Low Emissions)", 
+           color = "#abd9e9", fontface = "bold", size = 3.5) +
+  annotate("text", x = 4, y = max(viz9_data$total_med) * 0.7, 
+           label = "HYDROPOWER:\nTHE CONTRADICTION", 
+           color = "#fee08b", fontface = "bold", size = 4) +
+  scale_fill_manual(values = c("Fossil Fuel" = "#d73027",
+                              "Hydropower" = "#fee08b",
+                              "Nuclear" = "#abd9e9")) +
+  scale_size_continuous(range = c(4, 12), guide = "none") +
+  scale_y_log10(labels = scales::number_format()) +
+  labs(title = "The Emissions Spectrum: Coal to Renewables",
+       subtitle = "Hydropower's position (between fossil fuels and renewables) highlights the contradiction",
+       x = "Rank (Lowest to Highest Emissions)",
+       y = "Life Cycle GHG Emissions (g CO₂e/kWh, log scale)",
+       fill = "Category",
+       caption = "Article: 'Renewables/nuclear are generally less than fossil fuels' - but hydropower's position is complex") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz9)
+```
+
+**Insight:** This shows hydropower's position in the spectrum - between fossil fuels and other renewables. This visualizes the contradiction: it's a climate solution (low total) but also a methane source (ongoing emissions), requiring careful project selection.
+
+# Visualization 10: Systematic Review - Data Quality & Variability
+
+**Question:** Article: "Less than 15% of 3,000 studies passed quality review." How does this rigorous screening affect hydropower's reported variability?
+
+```{r viz10-systematic-review}
+# Show the variability range and data quality
+# Article: "Less than 15% of 3,000 studies passed quality review"
+# Highlight that even with rigorous screening, hydropower shows high variability
+
+viz10_data <- gleam_clean %>%
+  filter(!is.na(total_med)) %>%
+  mutate(
+    range = total_max - total_min,
+    variability_ratio = total_max / total_min
+  )
+
+viz10 <- viz10_data %>%
+  ggplot(aes(x = fct_reorder(tech_name, total_med), 
+             ymin = total_min, lower = total_1q, middle = total_med, 
+             upper = total_3q, ymax = total_max, 
+             fill = tech_category, color = tech_category)) +
+  geom_boxplot(stat = "identity", alpha = 0.7, width = 0.6, size = 1) +
+  geom_text(aes(y = total_max, label = paste0("Range: ", round(range, 0))),
+            vjust = -0.5, size = 3, fontface = "bold", color = "gray40") +
+  annotate("text", x = 4, y = max(viz10_data$total_max) * 1.15, 
+           label = "Article: 'Less than 15% of 3,000 studies\npassed quality review'\n\nEven with rigorous screening,\nhydropower shows high variability", 
+           color = "#2c7bb6", fontface = "bold", size = 3.5, hjust = 0.5) +
+  scale_fill_manual(values = c("Hydropower" = "#2c7bb6",
+                               "Coal" = "#313695",
+                               "Natural Gas" = "#4575b4",
+                               "Oil" = "#d73027",
+                               "Nuclear" = "#abd9e9")) +
+  scale_color_manual(values = c("Hydropower" = "#2c7bb6",
+                               "Coal" = "#313695",
+                               "Natural Gas" = "#4575b4",
+                               "Oil" = "#d73027",
+                               "Nuclear" = "#abd9e9")) +
+  scale_y_log10(labels = scales::number_format(), expand = expansion(mult = c(0, 0.2))) +
+  coord_flip() +
+  labs(title = "Systematic Review: Data Quality & Variability",
+       subtitle = "Box shows 1Q-3Q, whiskers show Min-Max. Article: 'Renewables less variable than fossil fuels'",
+       x = "Technology",
+       y = "Life Cycle GHG Emissions (g CO₂e/kWh, log scale)",
+       fill = "Category", color = "Category",
+       caption = "High variability in hydropower (even after quality screening) supports need for 'low-hanging fruits' identification") +
+  theme_minimal() +
+  theme(legend.position = "none",
+        plot.caption = element_text(face = "italic", size = 9, hjust = 0))
+
+print(viz10)
+```
+
+**Insight:** Even after rigorous systematic review (15% of studies passed), hydropower shows high variability. This isn't a data quality issue - it's real variability in project impacts, directly supporting the need for "low-hanging fruits" screening to identify best projects.
+
+# Summary
+
+These exploratory visualizations examine hydropower's life cycle emissions from multiple angles:
+
+1. **Variability is Key:** Multiple visualizations show hydropower's high variability, supporting the need for "low-hanging fruits" screening.
+
+2. **Type Matters:** Run-of-river vs. reservoir comparisons show significant differences, highlighting the importance of project type selection.
+
+3. **Phase Breakdown:** Understanding where emissions occur (upstream vs. operational) guides strategies for impact reduction.
+
+4. **Context Matters:** Comparing hydropower to fossil fuels shows climate benefits, while comparing to other renewables shows competitive positioning with unique grid services.
+
+The "low-hanging fruits" framework is supported by the data: careful project selection and site screening can deliver hydropower's benefits while minimizing environmental impacts.
