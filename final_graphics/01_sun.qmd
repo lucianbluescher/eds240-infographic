@@ -165,7 +165,7 @@ ggsave(
   plot = sun,
   bg = "transparent")
 
-
+sun
 ```
 
 **Takeaway:** Hydropower generation follows clear daily and seasonal patterns — stronger during peak daytime hours and in certain months, which helps grid operators balance supply and demand.

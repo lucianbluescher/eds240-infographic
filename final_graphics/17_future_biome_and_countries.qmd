@@ -26,6 +26,8 @@ library(sf)
 library(rnaturalearth)
 library(rnaturalearthdata)
 library(ggnewscale)
+library(ggrepel)
+source(here("final_graphics/style_sheet.R"))
 ```
 
 ```{r load-fhred}
@@ -74,6 +76,10 @@ basin_mw <- future_geo %>%
                            "Other basins")
   )
 
+# Stable top-10 basin palette keyed by ranked basin labels (must be defined before use)
+top_basins <- basin_mw %>% slice_head(n = 10) %>% pull(basin)
+pal_basin10 <- make_top10_basin_palette(top_basins)
+
 # Label anchors for top 10 basins: mean dam longitude/latitude per basin.
 # We then nudge some labels away from crowded regions (e.g., Southeast Asia)
 # and draw curved leader lines back to the anchor point.
@@ -110,7 +116,7 @@ basin_labels <- future_geo %>%
       basin == "Irrawaddy" ~ -15,   
       basin == "Salween"  ~ 40, 
       basin == "Indus"    ~ -10,
-      basin == "Ganges - Bramaputra"   ~ 10,
+      basin == "Ganges - Brahmaputra"   ~ 10,
       TRUE ~ 0
     ),
     nudge_y = case_when( # + for north, - for south
@@ -123,7 +129,7 @@ basin_labels <- future_geo %>%
       basin == "Irrawaddy" ~ -25, 
       basin == "Salween"  ~ -5, 
       basin == "Indus"    ~ 10,
-      basin == "Ganges - Bramaputra"   ~ 25,
+      basin == "Ganges - Brahmaputra"   ~ 25,
       TRUE ~ 0
     )
   )
@@ -133,10 +139,7 @@ future_geo <- future_geo %>%
   mutate(
     basin_group = factor(
       basin_ranked,
-      levels = c(
-        paste0(1:10, ". ", basin_mw$basin[1:10]),
-        "Other basins"
-      )
+      levels = names(pal_basin10)
     )
   )
 
@@ -160,11 +163,6 @@ pal_ci <- c(
 
 # Basin capacity palette (Greys) so basin colors are neutral
 pal_capacity <- RColorBrewer::brewer.pal(9, "Greys")
-
-pal_basin10 <- c(
-  RColorBrewer::brewer.pal(10, "Paired"),
-  "#666666"
-)
 ```
 
 ```{r load-country-future}

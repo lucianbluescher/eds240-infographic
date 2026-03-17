@@ -5,7 +5,7 @@ format:
     self-contained: true
   pdf:
     fig-width: 8
-    fig-height: 8
+    fig-height: 5
 execute:
   echo: false
   warning: false
@@ -17,7 +17,7 @@ editor_options:
 ```{r setup}
 #| warning: false
 #| message: false
-knitr::opts_chunk$set(fig.width = 8, fig.height = 8, dpi = 150)
+knitr::opts_chunk$set(fig.width = 8, fig.height = 5, dpi = 150)
 library(tidyverse)
 library(patchwork)
 ```
@@ -52,73 +52,45 @@ depth_long <- depth_data %>%
 ```{r plot}
 #| warning: false
 #| message: false
-# Palette: 20-year = warmer (short-term methane impact), 100-year = baltic blue
-horizon_fill <- c("20-Year" = "#c45c2a", "100-Year" = "#1c5d99")
+# Build a “scenario” grid using Li & He (2022) Table S3 marginal medians (20-year horizon).
+# NOTE: Li & He report medians separately by trophic and by depth; this is an index (sum of marginals),
+# not an observed joint CI for each (depth × trophic) combination.
 
-plot_trophic <- ggplot(trophic_long, aes(x = Category, y = CI, fill = Horizon)) +
-  geom_col(position = "dodge", width = 0.7) +
-  geom_hline(yintercept = 80, linetype = "dashed", color = "#222222", linewidth = 0.5) +
-  scale_fill_manual(values = horizon_fill) +
+trophic_20 <- trophic_data %>%
+  transmute(trophic = as.character(Category), ci_trophic_20 = CI_20yr)
+
+depth_20 <- depth_data %>%
+  transmute(depth = as.character(Category), ci_depth_20 = CI_20yr)
+
+scenario_grid <- tidyr::expand_grid(depth_20, trophic_20) %>%
+  mutate(
+    ci_index_20 = ci_depth_20 + ci_trophic_20,
+    depth = factor(depth, levels = c("Deep (>100 m)", "Medium (20–100 m)", "Shallow (<20 m)")),
+    trophic = factor(trophic, levels = c("Oligotrophic", "Mesotrophic", "Eutrophic"))
+  )
+
+ggplot(scenario_grid, aes(x = trophic, y = depth, fill = ci_index_20)) +
+  geom_tile(color = "white", linewidth = 0.7) +
+  geom_text(aes(label = round(ci_index_20)), color = "white", fontface = "bold", size = 3.5) +
+  scale_fill_viridis_c(option = "magma", 
+    direction = 1,        # 1 = Dark to Light (standard), -1 = Light to Dark
+    begin = 0.1,          # Trims the extreme black so it's not too heavy
+    end = 0.9,            # Trims the extreme white so the yellow isn't "blown out"
+    name = "Index CI\n(kg CO₂e/MWh)") +
   labs(
-    title = "Carbon intensity by trophic level",
-    subtitle = "Lower nutrients (Oligotrophic) = lower CI. 20-year GWP emphasizes short-term methane.",
+    title = "Scenario grid (20-year horizon): depth × trophic",
+    subtitle = "Index = CI(depth, 20y) + CI(trophic, 20y). Worst = shallow + eutrophic; best = deep + oligotrophic.",
     x = "Trophic state",
-    y = "Median CI (kg CO₂e/MWh)",
-    fill = "Time horizon"
+    y = "Reservoir depth",
+    caption = "Source: Li & He (2022) Table S3 (20-year horizon). Grid values are an index built from marginal medians, not observed joint CI."
   ) +
-  theme_minimal(base_size = 10) +
-  theme(
-    panel.grid.major.y = element_blank(),
-    plot.title = element_text(face = "bold")
-  )
-
-plot_depth <- ggplot(depth_long, aes(x = Category, y = CI, fill = Horizon)) +
-  geom_col(position = "dodge", width = 0.7) +
-  geom_hline(yintercept = 80, linetype = "dashed", color = "#222222", linewidth = 0.5) +
-  scale_fill_manual(values = horizon_fill) +
-  labs(
-    title = "Carbon intensity by reservoir depth",
-    subtitle = "Deep reservoirs are much cleaner than shallow ones.",
-    x = "Reservoir depth",
-    y = "Median CI (kg CO₂e/MWh)",
-    fill = "Time horizon"
-  ) +
-  theme_minimal(base_size = 10) +
-  theme(
-    panel.grid.major.y = element_blank(),
-    plot.title = element_text(face = "bold")
-  )
-
-# Heatmaps: same data, Category × Horizon, fill = CI
-heat_trophic <- ggplot(trophic_long, aes(x = Horizon, y = Category, fill = CI)) +
-  geom_tile(color = "white", linewidth = 0.6) +
-  geom_text(aes(label = round(CI)), color = "white", fontface = "bold", size = 3.2) +
-  scale_fill_viridis_c(option = "viridis", name = "Median CI\n(kg CO₂e/MWh)") +
-  labs(title = "Trophic level (heatmap)", x = NULL, y = NULL) +
   theme_minimal(base_size = 10) +
   theme(
     panel.grid = element_blank(),
     plot.title = element_text(face = "bold"),
-    axis.text.y = element_text(hjust = 0)
+    plot.subtitle = element_text(size = 9, color = "gray40"),
+    plot.caption = element_text(size = 8, color = "gray50")
   )
-
-heat_depth <- ggplot(depth_long, aes(x = Horizon, y = Category, fill = CI)) +
-  geom_tile(color = "white", linewidth = 0.6) +
-  geom_text(aes(label = round(CI)), color = "white", fontface = "bold", size = 3.2) +
-  scale_fill_viridis_c(option = "viridis", name = "Median CI\n(kg CO₂e/MWh)") +
-  labs(title = "Reservoir depth (heatmap)", x = NULL, y = NULL) +
-  theme_minimal(base_size = 10) +
-  theme(
-    panel.grid = element_blank(),
-    plot.title = element_text(face = "bold"),
-    axis.text.y = element_text(hjust = 0)
-  )
-
-(plot_trophic | plot_depth) / (heat_trophic | heat_depth) +
-  plot_annotation(
-    caption = "Source: Li & He (2022) Table S3. Dotted line = 80 kg CO₂e/MWh (low-carbon target)."
-  ) +
-  theme(plot.caption = element_text(size = 8, color = "gray50"))
 ```
 
-**Takeaway:** Deep and oligotrophic reservoirs have the lowest carbon intensity; shallow and eutrophic have the highest. The 20-year GWP horizon (warmer bars) makes short-term methane impact more visible than the 100-year horizon (blue bars).
+**Takeaway:** This 3×3 “scenario” grid visualizes all depth × trophic combinations using a simple index (sum of Li & He’s 20-year marginal medians). It highlights that shallow + eutrophic conditions are highest-risk, while deep + oligotrophic conditions are lowest-risk.

@@ -25,6 +25,7 @@ library(ggalluvial)
 library(treemapify)
 library(maps)
 library(scales)
+source(here("final_graphics/style_sheet.R"))
 ```
 
 ```{r load}
@@ -58,82 +59,46 @@ basin_mw <- future_geo %>%
   summarise(mw = sum(`Capacity (MW)`), .groups = "drop") %>%
   arrange(desc(mw))
 
-top_basins <- basin_mw %>% slice_head(n = 6) %>% pull(basin)
+top_basins <- basin_mw %>% slice_head(n = 10) %>% pull(basin)
 
 future_geo <- future_geo %>%
   mutate(
     basin_group = if_else(basin %in% top_basins, basin, "Other basins"),
     basin_group = forcats::fct_relevel(basin_group, "Other basins", after = Inf)
   )
-```
 
-## 1. Map — Where future dams are located
+# Match 17's basin palette (top 10 + other) — stable mapping by name
+pal_basin10 <- make_top10_basin_palette(top_basins)
 
-```{r map}
-#| warning: false
-#| message: false
-# World map outline (requires maps package)
-world <- map_data("world")
-
-p_map <- ggplot() +
-  geom_polygon(
-    data = world,
-    aes(x = long, y = lat, group = group),
-    fill = "#f5f5f5", color = "#dddddd", linewidth = 0.2
-  ) +
-  geom_point(
-    data = future_geo,
-    aes(x = Lon_Cleaned, y = LAT_cleaned, size = `Capacity (MW)`, color = continent),
-    alpha = 0.6,
-    shape = 16
-  ) +
-  scale_size_continuous(range = c(1, 10), labels = comma) +
-  scale_color_manual(
-    values = c(
-      "Africa" = pal["baltic_blue"], "Asia" = pal["pacific_blue"],
-      "South America" = pal["powder_blue"], "North America" = "#94b3d7",
-      "Europe" = "#c7d7f2", "Oceania" = "#e0ecf4", "Other" = pal["carbon_black"]
-    )
-  ) +
-  coord_fixed(ratio = 1.3, xlim = c(-180, 180), ylim = c(-60, 75)) +
-  labs(
-    title = "Future hydropower dam locations",
-    subtitle = "Point size = capacity (MW). Color = continent.",
-    x = NULL, y = NULL, size = "MW", color = "Continent"
-  ) +
-  theme_minimal(base_size = 10) +
-  theme(
-    panel.grid = element_blank(),
-    axis.text = element_blank(),
-    legend.position = "right",
-    plot.title = element_text(face = "bold")
+# Add ranked basin labels for consistent ordering/labels
+future_geo <- future_geo %>%
+  mutate(
+    basin_ranked = if_else(basin %in% top_basins,
+                           paste0(match(basin, top_basins), ". ", basin),
+                           "Other basins"),
+    basin_ranked = factor(basin_ranked, levels = names(pal_basin10))
   )
-
-p_map
 ```
 
-## 2. Trunk + branches — Capacity flows by basin
+## 1. Trunk + branches — Capacity flows by basin (top 10 + other)
 
 ```{r sankey}
 #| warning: false
 #| message: false
 basin_tab <- future_geo %>%
-  group_by(basin_group) %>%
+  group_by(basin_ranked) %>%
   summarise(mw = sum(`Capacity (MW)`), .groups = "drop") %>%
   arrange(desc(mw)) %>%
-  mutate(
-    basin_group = forcats::fct_relevel(basin_group, "Other basins", after = Inf)
-  ) %>%
   mutate(
     total_node = "Total future hydropower",
     share = mw / sum(mw)
   )
 
-ggplot(basin_tab, aes(axis1 = total_node, axis2 = basin_group, y = mw)) +
-  geom_alluvium(aes(fill = basin_group), width = 0, alpha = 0.9, knot.pos = 0.4) +
+ggplot(basin_tab, aes(axis1 = total_node, axis2 = basin_ranked, y = mw)) +
+  geom_alluvium(aes(fill = basin_ranked), width = 0, alpha = 0.9, knot.pos = 0.4) +
   geom_stratum(width = 0.2, fill = pal["white"], color = "#e5e5e5") +
   geom_text(stat = "stratum", aes(label = after_stat(stratum)), size = 3, color = pal["carbon_black"]) +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
+  scale_fill_manual(values = pal_basin10, guide = "none") +
   scale_x_discrete(limits = c("Total", "River basin"), expand = c(0.1, 0.1)) +
   labs(title = "Capacity by river basin", subtitle = "Width = MW", x = NULL, y = "MW") +
   theme_minimal(base_size = 10) +
@@ -145,76 +110,109 @@ ggplot(basin_tab, aes(axis1 = total_node, axis2 = basin_group, y = mw)) +
   )
 ```
 
-## 3. Bar chart — MW by continent
-
-```{r bar}
-#| warning: false
-#| message: false
-cont_mw <- future_geo %>%
-  group_by(continent) %>%
-  summarise(mw = sum(`Capacity (MW)`), .groups = "drop") %>%
-  arrange(desc(mw))
-
-p_bar <- ggplot(cont_mw, aes(x = fct_reorder(continent, mw), y = mw, fill = continent)) +
-  geom_col(width = 0.7) +
-  geom_text(aes(label = comma(round(mw))), hjust = -0.1, size = 3, color = pal["carbon_black"]) +
-  scale_fill_manual(
-    values = c(
-      "Africa" = pal["baltic_blue"], "Asia" = pal["pacific_blue"],
-      "South America" = pal["powder_blue"], "North America" = "#94b3d7",
-      "Europe" = "#c7d7f2", "Oceania" = "#e0ecf4", "Other" = pal["carbon_black"]
-    ),
-    guide = "none"
-  ) +
-  scale_y_continuous(labels = comma, expand = expansion(mult = c(0, 0.12))) +
-  coord_flip() +
-  labs(
-    title = "Future capacity by continent",
-    x = NULL, y = "Capacity (MW)"
-  ) +
-  theme_minimal(base_size = 10) +
-  theme(
-    panel.grid.major.y = element_blank(),
-    plot.title = element_text(face = "bold")
-  )
-
-p_bar
-```
-
-## 4. Treemap — Continent → Basin → MW
+## 2. Treemap — Capacity by basin (top 10 + other)
 
 ```{r treemap}
 #| warning: false
 #| message: false
 treemap_data <- future_geo %>%
-  group_by(continent, basin_group) %>%
+  group_by(basin_ranked) %>%
   summarise(mw = sum(`Capacity (MW)`), .groups = "drop") %>%
-  filter(mw > 0)
+  filter(mw > 0) %>%
+  mutate(label = paste0(basin_ranked, "\n(", scales::comma(round(mw)), " MW)"))
 
-p_treemap <- ggplot(treemap_data, aes(area = mw, fill = continent, subgroup = continent, label = basin_group)) +
+p_treemap <- ggplot(treemap_data, aes(area = mw, fill = basin_ranked, label = label)) +
   geom_treemap(layout = "squarified", color = "white", linewidth = 0.5) +
-  geom_treemap_subgroup_border(layout = "squarified", color = pal["carbon_black"], linewidth = 1) +
   geom_treemap_text(
     layout = "squarified", place = "centre",
     size = 10, color = "white", fontface = "bold",
     min.size = 4
   ) +
-  scale_fill_manual(
-    values = c(
-      "Africa" = pal["baltic_blue"], "Asia" = pal["pacific_blue"],
-      "South America" = pal["powder_blue"], "North America" = "#94b3d7",
-      "Europe" = "#c7d7f2", "Oceania" = "#e0ecf4", "Other" = pal["carbon_black"]
-    ),
-    guide = "legend"
-  ) +
-  labs(title = "Capacity by continent and basin", fill = "Continent") +
+  scale_fill_manual(values = okabe_ito_11, guide = "none") +
+  labs(title = "Capacity by basin (top 10 + other)") +
   theme_minimal(base_size = 10) +
   theme(
     plot.title = element_text(face = "bold"),
-    legend.position = "bottom"
+    legend.position = "none"
   )
 
 p_treemap
+```
+
+## 3. Basin bubbles — Total future vs top 10 basins
+
+```{r basin-bubbles}
+#| warning: false
+#| message: false
+#| fig-height: 3
+# Use the same top-10 basin ordering and colors as the sankey/treemap.
+
+basin_top10 <- basin_mw %>%
+  slice_head(n = 10) %>%
+  mutate(
+    basin_rank = row_number(),
+    basin_group = paste0(basin_rank, ". ", basin),
+    basin_group = factor(basin_group, levels = paste0(1:10, ". ", top_basins)),
+    cap_k = round(mw / 1e3),
+    cap_label = paste0(cap_k, "k\nMW")
+  )
+
+total_future <- tibble(
+  basin_group = "Total future",
+  mw = sum(basin_mw$mw),
+  cap_k = round(mw / 1e3),
+  cap_label = paste0(cap_k, "k\nMW")
+)
+
+basin_bubbles <- bind_rows(
+  total_future,
+  basin_top10 %>% transmute(basin_group = as.character(basin_group), mw, cap_label)
+) %>%
+  mutate(
+    basin_group = factor(basin_group, levels = c("Total future", as.character(basin_top10$basin_group))),
+    x_pos = seq(1, by = 0.85, length.out = n())
+  )
+
+pal_bubbles <- c(
+  "Total future" = "#ffffff",
+  setNames(pal_basin10[1:10], as.character(basin_top10$basin_group))
+)
+
+ggplot(
+  basin_bubbles,
+  aes(
+    x = x_pos,
+    y = 0.9,
+    size = mw,
+    fill = basin_group
+  )
+) +
+  geom_point(shape = 21, color = pal["carbon_black"], alpha = 0.95, stroke = 0.4) +
+  # Two-pass text for legibility (fake outline)
+  geom_text(aes(label = cap_label), color = pal["carbon_black"], fontface = "bold", size = 2.9, lineheight = 0.9) +
+  geom_text(aes(label = cap_label), color = pal["white"], fontface = "bold", size = 2.6, lineheight = 0.9) +
+  scale_fill_manual(values = pal_bubbles, guide = "none") +
+  scale_size_continuous(range = c(8, 30), labels = comma, guide = "none") +
+  scale_x_continuous(
+    breaks = basin_bubbles$x_pos,
+    labels = as.character(basin_bubbles$basin_group),
+    expand = expansion(mult = c(0.01, 0.01))
+  ) +
+  coord_cartesian(ylim = c(0, 1.6), clip = "off") +
+  labs(
+    title = "Total future capacity vs top 10 basins",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 9) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    axis.text.x = element_text(size = 8, face = "bold", margin = margin(t = 2)),
+    plot.title = element_text(face = "bold", hjust = 0)
+  )
 ```
 
 ---
