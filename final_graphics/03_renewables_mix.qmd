@@ -1,0 +1,150 @@
+---
+title: "Renewables Mix"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 6
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 6, fig.height = 5, dpi = 150)
+library(tidyverse)
+library(scales)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+nze <- read_csv(here::here("data/NZE2021_AnnexA.csv"), show_col_types = FALSE)
+
+generation <- nze %>%
+  filter(
+    Flow == "Electricity generation",
+    Unit == "TWh",
+    Product %in% c("Hydro", "Solar PV", "Wind", "Renewables")
+  ) %>%
+  select(Product, Year, Value) %>%
+  pivot_wider(names_from = Product, values_from = Value) %>%
+  mutate(
+    Other_Renewables = Renewables - Hydro - `Solar PV` - Wind,
+    Hydro_Share_Renewables = (Hydro / Renewables) * 100
+  )
+
+viz_data <- generation %>%
+  select(Year, Hydropower = Hydro, `Solar PV`, Wind, Other_Renewables) %>%
+  pivot_longer(cols = -Year, names_to = "Source", values_to = "Generation") %>%
+  mutate(
+    Source = factor(Source, levels = c("Other_Renewables", "Wind", "Solar PV", "Hydropower")),
+    Source_Label = case_when(
+      Source == "Other_Renewables" ~ "Other",
+      Source == "Solar PV" ~ "Solar PV",
+      Source == "Wind" ~ "Wind",
+      TRUE ~ "Hydropower"
+    )
+  )
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+ggplot(viz_data, aes(x = Year, y = Generation, fill = Source_Label)) +
+  geom_area(alpha = 0.85, color = "#ffffff", linewidth = 0.3) +
+  geom_line(data = generation, aes(x = Year, y = Hydro), inherit.aes = FALSE,
+            color = "#1c5d99", linewidth = 1.5, linetype = "dashed") +
+  geom_point(data = generation, aes(x = Year, y = Hydro), inherit.aes = FALSE,
+             color = "#1c5d99", size = 3, shape = 21, fill = "#ffffff", stroke = 1.5) +
+  annotate("text", x = 2052, y = generation %>% filter(Year == 2050) %>% pull(Hydro),
+           label = "Hydro (dotted)", hjust = 0, vjust = 0.5, size = 3, color = "#1c5d99", fontface = "bold") +
+  geom_text(data = generation %>% filter(Year == 2050),
+            aes(x = 2050, y = Hydro, label = paste0(round(Hydro_Share_Renewables, 0), "% of renewables")),
+            inherit.aes = FALSE, hjust = -0.1, vjust = -0.5, size = 3.2, fontface = "bold", color = "#1c5d99") +
+  scale_fill_manual(values = c("Hydropower" = "#1c5d99", "Solar PV" = "#639fab", "Wind" = "#bbcde5", "Other" = "#222222"),
+                    guide = guide_legend(reverse = TRUE)) +
+  scale_x_continuous(breaks = c(2019, 2030, 2040, 2050), expand = expansion(mult = c(0, 0.08))) +
+  scale_y_continuous(labels = comma_format()) +
+  labs(
+    title = "Hydro doubles, share declines",
+    subtitle = "Stacked area = total renewables. Dotted line = hydropower alone (absolute generation).",
+    x = "Year", y = "Electricity (TWh)", fill = NULL,
+    caption = "Source: IEA Net Zero by 2050"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.caption = element_text(size = 9, color = "gray50")
+  )
+```
+
+```{r plot-minimal}
+#| warning: false
+#| message: false
+# Minimal: transparent background, gridlines, no dotted line, no axis labels/scales
+renew_mix <- ggplot(viz_data, aes(x = Year, y = Generation, fill = Source_Label)) +
+  geom_area(alpha = 1, color = "#ffffff", linewidth = 0.3) +
+  scale_fill_manual(values = c("Hydropower" = "#1c5d99", "Solar PV" = "#639fab", "Wind" = "#bbcde5", "Other" = "#222222"),
+                    guide = "none") +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.08))) +
+  scale_y_continuous(labels = NULL, breaks = NULL) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.title = element_blank(),
+    plot.subtitle = element_blank(),
+    plot.caption = element_blank(),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    axis.title = element_blank(),
+    axis.text = element_blank()
+  )
+
+ggsave(
+  filename = "renewable_mix_transparent.pdf",
+  plot = renew_mix,
+  bg = "transparent",
+
+  # Crucial argument for transparent output file
+  #width = 6, height = 4, units = "px"
+)
+
+```
+
+```{r plot-minimal-transparent}
+#| warning: false
+#| message: false
+# Same as minimal but: remove dotted line, make areas transparent
+ggplot(viz_data, aes(x = Year, y = Generation, fill = Source_Label)) +
+  geom_area(alpha = 1, color = "#ffffff", linewidth = 0.3) +
+  scale_fill_manual(values = c("Hydropower" = "#1c5d99", "Solar PV" = "#639fab", "Wind" = "#bbcde5", "Other" = "#222222"),
+                    guide = "none") +
+  scale_x_continuous(breaks = c(2019, 2030, 2040, 2050), expand = expansion(mult = c(0, 0.08))) +
+  scale_y_continuous(labels = comma_format()) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(
+  panel.grid.minor = element_blank(),
+  plot.title = element_blank(),
+  plot.subtitle = element_blank(),
+  plot.caption = element_blank(),
+  plot.background = element_rect(fill = "transparent", color = NA),
+  panel.background = element_rect(fill = "transparent", color = NA)
+)
+```
+
+**Takeaway:** Hydropower output roughly doubles by 2050, but its share of total renewables falls because solar and wind grow much faster. The dotted line shows hydropower’s absolute path; the hydro band in the stack is the same quantity.
+
+**Data:** IEA Net Zero scenario (NZE2021_AnnexA): electricity generation (TWh) for Hydro, Solar PV, Wind, and total Renewables by year. Other renewables = total renewables minus hydro, solar, and wind.
+
+**Key terms:** TWh = terawatt-hours (1 TWh = 1 billion kWh). Dotted line = absolute hydropower generation; stacked areas = share of total renewables. Renewables = sources that don’t burn fossil fuels (hydro, solar, wind, geothermal, etc.).
+

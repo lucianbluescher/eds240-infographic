@@ -1,0 +1,189 @@
+---
+title: "Future Hydropower — High-Emitting Biomes"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 10
+    fig-height: 6
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 10, fig.height = 6, dpi = 150)
+library(tidyverse)
+library(here)
+library(readxl)
+library(maps)
+library(scales)
+library(sf)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+# FHReD future dams (same source as 14; use sheet 2 if sheet 1 is intro)
+xl_path <- here("data/FHReD_2015_future_dams_Zarfl_et_al_beta_version/FHReD_2015_future_dams_Zarfl_et_al_beta_version.xlsx")
+future <- read_xlsx(xl_path, sheet = 2)
+
+# readd in grand data
+grand_path <- "~/Desktop/MEDS/EDS-240-data-viz/eds240-infographic/data/GRanD_Version_1_3/GRanD_dams_v1_3.shp"
+grand_raw <- st_read(grand_path)
+
+names(grand_raw)
+unique(grand_raw$PURPOSES)  # or use View() to inspect
+# Li & He (2022) Table S2 — median carbon intensity by biome (kg CO2e/MWh)
+biome_ci <- tribble(
+  ~biome,     ~ci_median,
+  "Tundra",      43.8,
+  "Boreal",     104.4,
+  "Temperate",   54.8,
+  "Tropical",    91.0
+)
+
+# Assign biome from latitude (Li & He–style bands)
+assign_biome <- function(lat) {
+  case_when(
+    lat >= 60 | lat <= -60 ~ "Tundra",
+    (lat >= 50 & lat < 60) | (lat <= -50 & lat > -60) ~ "Boreal",
+    (lat >= 23 & lat < 50) | (lat <= -23 & lat > -50) ~ "Temperate",
+    lat > -23 & lat < 23 ~ "Tropical",
+    TRUE ~ NA_character_
+  )
+}
+
+future_geo <- future %>%
+  filter(!is.na(`Capacity (MW)`), !is.na(LAT_cleaned), !is.na(Lon_Cleaned)) %>%
+  mutate(
+    biome = assign_biome(LAT_cleaned),
+    basin = coalesce(`Major Basin`, "Other")
+  ) %>%
+  left_join(biome_ci, by = "biome")
+
+# Basin-level totals (MW) and top basins for discrete coloring (ordered by size)
+basin_mw <- future_geo %>%
+  group_by(basin) %>%
+  summarise(basin_mw_total = sum(`Capacity (MW)`), .groups = "drop") %>%
+  arrange(desc(basin_mw_total)) %>%
+  mutate(
+    rank = row_number(),
+    basin_ranked = if_else(rank <= 10,
+                           paste0(rank, ". ", basin),
+                           "Other basins")
+  )
+
+future_geo <- future_geo %>%
+  left_join(basin_mw, by = "basin") %>%
+  mutate(
+    basin_group = factor(basin_ranked,
+                         levels = c(
+                           paste0(1:10, ". ", basin_mw$basin[1:10]),
+                           "Other basins"
+                         ))
+  )
+
+# Lat-band rectangles for background (biome zones)
+# Tundra >60, Boreal 50–60, Temperate 23–50, Tropical -23–23, Temperate -23–-50, Boreal -50–-60, Tundra <-60
+lat_bands <- tribble(
+  ~ymin, ~ymax, ~biome,
+  -90,   -60,   "Tundra",
+  -60,   -50,   "Boreal",
+  -50,   -23,   "Temperate",
+  -23,    23,   "Tropical",
+   23,    50,   "Temperate",
+   50,    60,   "Boreal",
+   60,    90,   "Tundra"
+) %>%
+  left_join(biome_ci, by = "biome")
+
+world <- map_data("world")
+
+# Colors: low CI = cooler (blue), high CI = warmer (amber/red). 80 kg = target line.
+pal_ci <- c(
+  "Tundra"    = "#639fab",   # low
+  "Boreal"    = "#c45c2a",   # high
+  "Temperate" = "#1c5d99",   # mid-low
+  "Tropical"  = "hotpink"   # high
+)
+
+# Discrete palette for top 10 basins (+ other), following the ordered factor
+pal_basin10 <- c(
+  RColorBrewer::brewer.pal(10, "Paired"),
+  "#666666"
+)
+```
+
+```{r map}
+#| warning: false
+#| message: false
+ggplot() +
+  # Latitude bands by biome (emission intensity)
+  geom_rect(
+    data = lat_bands,
+    aes(xmin = -180, xmax = 180, ymin = ymin, ymax = ymax, fill = biome),
+    alpha = 0.35
+  ) +
+  scale_fill_manual(values = pal_ci, name = "Biome (Li & He)") +
+  # World outline
+  geom_polygon(
+    data = world,
+    aes(x = long, y = lat, group = group),
+    fill = "#f8f8f8", color = "#cccccc", linewidth = 0.2
+  ) +
+  # Future dam locations, colored by biome, size by capacity
+  geom_point(
+    data = future_geo,
+    aes(x = Lon_Cleaned, y = LAT_cleaned, size = `Capacity (MW)`, color = basin_group,
+        alpha = basin_group),
+    shape = 16
+  ) +
+  scale_size_continuous(range = c(1.2, 11), labels = comma, name = "Capacity (MW)") +
+  scale_color_manual(values = pal_basin10, name = "Top future basins") +
+  scale_alpha_manual(
+    values = c(rep(0.9, 10), 0.4),
+    guide = "none"
+  ) +
+  guides(
+    fill = guide_legend(override.aes = list(alpha = 0.9, size = 3)),
+    color = guide_legend(override.aes = list(alpha = 0.85, size = 3))
+  ) +
+  coord_fixed(ratio = 1.3, xlim = c(-180, 180), ylim = c(-60, 75)) +
+  labs(
+    title = "Future hydropower is concentrated in high‑emitting biomes",
+    subtitle = "Background = latitude biome (Li & He). Points = planned dams; color = top 10 basins by total future capacity (others in gray); size = individual dam capacity. Tropical & boreal median CI > 80 kg CO₂e/MWh.",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold")
+  )
+```
+
+```{r legend-table, include=TRUE}
+#| warning: false
+#| message: false
+# Legend: biome and median CI for clarity
+biome_ci %>%
+  mutate(
+    ci_label = paste0(ci_median, " kg CO₂e/MWh"),
+    above_80 = if_else(ci_median > 80, "> 80 (high)", "≤ 80")
+  ) %>%
+  knitr::kable(
+    col.names = c("Biome", "Median CI", "vs 80 kg target"),
+    align = c("l", "r", "l")
+  )
+```
+
+**Takeaway:** Most planned capacity sits in Tropical and Temperate bands. Li & He (2022) report higher median carbon intensity in Tropical and Boreal biomes; siting in these zones implies higher emissions per MWh unless design and management reduce them.
+
+**Data:** Dam locations and capacity from FHReD (Zarfl et al. 2015). Biome from latitude; median CI from Li & He (2022) Table S2.

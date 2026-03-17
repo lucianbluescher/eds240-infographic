@@ -1,0 +1,238 @@
+---
+title: "final_countdown"
+format: html
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r}
+library(tidyverse)
+library(haven)
+```
+
+
+```{r}
+dta <- read_dta("data/marginal-generation-offsets-data.dta")
+head(dta)
+```
+
+```{r}
+library(lubridate)
+
+dta_fmix <- dta %>%
+  mutate(
+    renew = w + s + h,
+    fossil = ff + ng,
+    total_gen = renew + fossil,
+    fossil_share = if_else(total_gen > 0, fossil / total_gen, NA_real_),
+    doy  = yday(dt)
+  ) %>%
+  filter(!is.na(fossil_share))
+
+ggplot(dta_fmix, aes(x = hour, y = doy, fill = fossil_share)) +
+  geom_tile() +
+  scale_fill_viridis_c(option = "A", name = "Fossil share") +
+  scale_y_continuous(breaks = c(1, 91, 182, 274, 365),
+                     labels = c("Jan", "Apr", "Jul", "Oct", "Dec")) +
+  coord_polar(theta = "x") +
+  labs(
+    title = "Fossil vs renewables over the year",
+    subtitle = "Circular heatmap: hour of day (angle) × day of year (radius)",
+    x = "Hour of day", y = NULL
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.y  = element_text(size = 8),
+    axis.title.x = element_blank(),
+    panel.grid   = element_blank(),
+    legend.position = "right"
+  )
+```
+
+```{r}
+library(tidyverse)
+library(lubridate)
+
+dta_prepped <- dta %>%
+  mutate(
+    total_gen_mw = ff + ng + w + s + h,
+    hydro_share  = if_else(total_gen_mw > 0, h / total_gen_mw, NA_real_),
+    other_ren    = w + s,
+    fossil       = ff + ng,
+    fossil_share = if_else(total_gen_mw > 0, fossil / total_gen_mw, NA_real_),
+    # tons CO2 per MWh (1‑hr timestep, so MWh ≈ MW)
+    co2_t_per_mwh = if_else(total_gen_mw > 0,
+                            rh101_co2_masstons / total_gen_mw,
+                            NA_real_)
+  ) %>%
+  filter(!is.na(hydro_share),
+         !is.na(co2_t_per_mwh),
+         co2_t_per_mwh > 0)
+```
+
+
+```{r}
+library(ggplot2)
+library(viridis)
+
+ggplot(dta_prepped,
+       aes(x = hydro_share, y = co2_t_per_mwh)) +
+  geom_hex(bins = 40) +
+  scale_fill_viridis_c(option = "C", trans = "log10",
+                       name = "Hours\nper bin") +
+  geom_smooth(method = "gam", formula = y ~ s(x),
+              color = "#2c7bb6", fill = "#2c7bb6",
+              alpha = 0.2, size = 1.2) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1),
+                     limits = c(0, 1)) +
+  scale_y_log10(labels = scales::number_format(accuracy = 0.01)) +
+  labs(
+    title = "Extreme variability in hourly CO₂ intensity vs hydropower share",
+    subtitle = "Each hex = many hours; blue line = smoothed relationship (tons CO₂ / MWh, log scale)",
+    x = "Hydropower share of generation",
+    y = "Stack CO₂ intensity (tCO₂ / MWh, log scale)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+
+
+```{r}
+library(tidyverse)
+library(lubridate)
+
+# 1. Prep: average hydropower by month × hour
+hydro_sun <- dta %>%
+  mutate(
+    month_num = month,
+    month_lab = factor(month.abb[month_num], levels = month.abb)
+  ) %>%
+  group_by(month_lab, month_num, hour) %>%
+  summarise(h_mean = mean(h, na.rm = TRUE), .groups = "drop") %>%
+  # normalize for nicer color scale
+  mutate(h_norm = h_mean / max(h_mean, na.rm = TRUE))
+
+# 2. Sun plot: hour = angle, month = radius
+ggplot(hydro_sun,
+       aes(x = hour, y = month_num, fill = h_norm)) +
+  geom_tile(color = NA) +
+  coord_polar(theta = "x") +
+  scale_y_continuous(
+    breaks = 1:12,
+    labels = month.abb,
+    expand = c(0, 0)
+  ) +
+  scale_fill_gradientn(
+    colours = c("#fff7bc", "#fee391", "#fec44f", "#fe9929", "#d95f0e", "#993404"),
+    name = "Avg hydro\n(normalized)"
+  ) +
+  labs(
+    title = "Hydropower \"sun\": when the dam is brightest",
+    subtitle = "Rings = months, rays = hours; brighter = more hydropower generation",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "right",
+    axis.text.y = element_text(face = "bold", size = 8),
+    axis.text.x = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray40")
+  )
+```
+
+
+
+```{r}
+library(tidyverse)
+library(lubridate)
+library(viridis)
+
+# ---------- SETTINGS ----------
+inner_radius <- 1.5   # controls size of the inner month disc
+
+# ---------- 1. INNER DISC: average hydro by MONTH ----------
+inner_month <- dta %>%
+  mutate(
+    month_num = month(dt),
+    month_lab = factor(month.abb[month_num], levels = month.abb)
+  ) %>%
+  group_by(month_lab) %>%
+  summarise(h_mean = mean(h, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    h_norm = h_mean / max(h_mean, na.rm = TRUE)    # 0–1 normalization
+  )
+
+# Each month spans two hour-slots so wedges line up nicely with a 24-hour circle
+month_slots <- tibble(
+  month_lab = factor(month.abb, levels = month.abb),
+  x_center  = seq(1, 23, by = 2)   # 12 centers, between 0–24
+)
+
+inner_month_long <- inner_month %>%
+  inner_join(month_slots, by = "month_lab")
+
+# ---------- 2. OUTER CORONA: average hydro by HOUR ----------
+outer_hour <- dta %>%
+  mutate(hour = hour(dt)) %>%
+  group_by(hour) %>%
+  summarise(h_mean = mean(h, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    h_norm  = h_mean / max(h_mean, na.rm = TRUE),
+    # rotate hours so that 12:00 sits at the top in coord_polar(start = 0)
+    hour_rot = (hour - 12) %% 24,
+    inner_r  = inner_radius + 0.1,
+    outer_r  = inner_r + 0.9 * h_norm
+  )
+
+# ---------- 3. PLOT ----------
+ggplot() +
+  # INNER MONTH DISC (months as wide wedges)
+  geom_col(
+    data = inner_month_long,
+    aes(x = x_center, y = inner_radius, fill = h_norm),
+    width = 2,    # spans two "hour" units
+    color = NA
+  ) +
+  # OUTER HOUR RAYS (24-hour corona)
+  geom_segment(
+    data = outer_hour,
+    aes(x = hour_rot, xend = hour_rot,
+        y = inner_r,  yend = outer_r,
+        color = h_norm),
+    lineend = "round",
+    size = 1.0,
+    alpha = 0.9
+  ) +
+  coord_polar(theta = "x", start = 0) +  # 0 (our rotated 12:00) at top
+  # one shared color scale for both months and hours
+  scale_colour_gradientn(
+    colours = c("#fff7bc", "#fee391", "#fec44f", "#fe9929", "#d95f0e", "#993404"),
+    name = "Avg hydropower\n(normalized)"
+  ) +
+  scale_fill_gradientn(
+    colours = c("#fff7bc", "#fee391", "#fec44f", "#fe9929", "#d95f0e", "#993404"),
+    guide  = "none"
+  ) +
+  scale_y_continuous(limits = c(0, inner_radius + 1.3), breaks = NULL) +
+  labs(
+    title    = "Hydropower \"sun\": months at the core, hours as corona",
+    subtitle = "Color = normalized hydropower generation (same scale for months and hours)\n12:00 is at the top of the circle",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position   = "right",
+    axis.text         = element_blank(),
+    axis.ticks        = element_blank(),
+    panel.grid.minor  = element_blank(),
+    panel.grid.major  = element_blank(),
+    plot.title        = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle     = element_text(hjust = 0.5, color = "gray40")
+  )
+```
+

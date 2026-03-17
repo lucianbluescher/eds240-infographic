@@ -1,0 +1,70 @@
+---
+title: "Pathway Shift"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 6
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 6, fig.height = 5, dpi = 150)
+library(tidyverse)
+library(readxl)
+library(here)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+raw_ts <- read_xlsx(here("data/moesm.xlsx"), sheet = 1)
+
+pathway_cols <- c("CO2_diff", "CH4_diff", "CH4_bub", "CH4_deg")
+pathway_labels <- c("CO2 diffusion", "CH4 diffusion", "CH4 ebullition", "CH4 degassing")
+
+emissions_pathway <- raw_ts %>%
+  select(year = Year, all_of(pathway_cols)) %>%
+  pivot_longer(-year, names_to = "pathway", values_to = "tmol_c") %>%
+  mutate(
+    pathway = factor(pathway, levels = pathway_cols, labels = pathway_labels),
+    pathway = factor(pathway, levels = c("CH4 degassing", "CH4 ebullition", "CH4 diffusion", "CO2 diffusion"))
+  )
+
+pathway_fill <- c("CO2 diffusion" = "#1c5d99", "CH4 diffusion" = "#639fab",
+                  "CH4 ebullition" = "#bbcde5", "CH4 degassing" = "#222222")
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+ggplot(emissions_pathway, aes(x = year, y = tmol_c, fill = pathway)) +
+  geom_area(alpha = 0.85, color = "#ffffff", linewidth = 0.2) +
+  scale_fill_manual(values = pathway_fill) +
+  labs(
+    title = "Reservoir emissions shift: CO2 → CH4 dominance",
+    subtitle = "CO2 diffusion dominated early; CH4 ebullition & degassing rise as reservoirs age",
+    x = "Year", y = "Carbon emissions (Tmol C/yr)", fill = "Pathway",
+    caption = "Source: Soued et al. (2022) Nature Geoscience"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.caption = element_text(size = 9, color = "gray50")
+  )
+```
+
+**Takeaway:** Reservoir emissions have shifted from CO2-dominated (early 1900s) to CH4-dominated (today). Methane ebullition (bubbles from sediment) and degassing (from turbines/spillways) now drive most warming impact.
+
+**Data:** Soued et al. (2022) Nature Geoscience, moesm.xlsx. Global reservoir carbon emissions by pathway (CO2 diffusion, CH4 diffusion, CH4 ebullition, CH4 degassing). Tmol C/yr = teramoles of carbon per year.
+
+**Key terms:** Diffusion = gas leaving water surface; ebullition = methane bubbles from sediment; degassing = methane released when water passes through turbines or spillways. CH4 = methane; CO2 = carbon dioxide.

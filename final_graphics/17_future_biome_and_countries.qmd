@@ -1,0 +1,306 @@
+---
+title: "Future Hydropower — Basins, Biomes, and Countries"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 11
+    fig-height: 6
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 11, fig.height = 6, dpi = 150)
+library(tidyverse)
+library(here)
+library(readxl)
+library(scales)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggnewscale)
+```
+
+```{r load-fhred}
+#| warning: false
+#| message: false
+# FHReD future dams (same source as 14/15; use sheet 2 if sheet 1 is intro)
+xl_path <- here("data/FHReD_2015_future_dams_Zarfl_et_al_beta_version/FHReD_2015_future_dams_Zarfl_et_al_beta_version.xlsx")
+future <- read_xlsx(xl_path, sheet = 2)
+
+# Li & He (2022) Table S2 — median carbon intensity by biome (kg CO2e/MWh)
+biome_ci <- tribble(
+  ~biome,     ~ci_median,
+  "Tundra",      43.8,
+  "Boreal",     104.4,
+  "Temperate",   54.8,
+  "Tropical",    91.0
+)
+
+assign_biome <- function(lat) {
+  case_when(
+    lat >= 60 | lat <= -60 ~ "Tundra",
+    (lat >= 50 & lat < 60) | (lat <= -50 & lat > -60) ~ "Boreal",
+    (lat >= 23 & lat < 50) | (lat <= -23 & lat > -50) ~ "Temperate",
+    lat > -23 & lat < 23 ~ "Tropical",
+    TRUE ~ NA_character_
+  )
+}
+
+future_geo <- future %>%
+  filter(!is.na(`Capacity (MW)`), !is.na(LAT_cleaned), !is.na(Lon_Cleaned)) %>%
+  mutate(
+    biome = assign_biome(LAT_cleaned),
+    basin = coalesce(`Major Basin`, "Other")
+  ) %>%
+  left_join(biome_ci, by = "biome")
+
+# Basin-level totals (MW) and top basins for discrete coloring (ordered by size)
+basin_mw <- future_geo %>%
+  group_by(basin) %>%
+  summarise(basin_mw_total = sum(`Capacity (MW)`), .groups = "drop") %>%
+  arrange(desc(basin_mw_total)) %>%
+  mutate(
+    rank = row_number(),
+    basin_ranked = if_else(rank <= 10,
+                           paste0(rank, ". ", basin),
+                           "Other basins")
+  )
+
+# Label anchors for top 10 basins: mean dam longitude/latitude per basin.
+# We then nudge some labels away from crowded regions (e.g., Southeast Asia)
+# and draw curved leader lines back to the anchor point.
+basin_labels <- future_geo %>%
+  filter(basin %in% basin_mw$basin[1:10]) %>%
+  group_by(basin) %>%
+  summarise(
+    # Use medians (not means) so a few outlier dams don't pull the anchor away
+    anchor_x = median(Lon_Cleaned, na.rm = TRUE),
+    anchor_y = median(LAT_cleaned, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(
+    basin_mw %>%
+      filter(rank <= 10) %>%
+      transmute(
+        basin,
+        basin_mw_total,
+        label_rank = paste0(rank, ". ", basin)
+      ),
+    by = "basin"
+  ) %>%
+  mutate(
+    # Simple label: rank + basin only
+    label = label_rank,
+    # Keep anchors on-basin (for stems), but nudge label placement toward ocean.
+    nudge_x = case_when( # + for east, - for west
+      basin == "Yangtze"  ~ 60,   
+      basin == "Mekong"   ~ 40,  
+      basin == "Amazon"   ~ 30, 
+      basin == "La Plata" ~ 25,   
+      basin == "Congo"    ~ -30, 
+      basin == "Nile"     ~ 20,  
+      basin == "Irrawaddy" ~ -15,   
+      basin == "Salween"  ~ 40, 
+      basin == "Indus"    ~ -10,
+      basin == "Ganges - Bramaputra"   ~ 10,
+      TRUE ~ 0
+    ),
+    nudge_y = case_when( # + for north, - for south
+      basin == "Yangtze"  ~ 10,  
+      basin == "Mekong"   ~ -15,   
+      basin == "Amazon"   ~ 10,    
+      basin == "La Plata" ~ -5,    
+      basin == "Congo"    ~ -15,    
+      basin == "Nile"     ~ -5,    
+      basin == "Irrawaddy" ~ -25, 
+      basin == "Salween"  ~ -5, 
+      basin == "Indus"    ~ 10,
+      basin == "Ganges - Bramaputra"   ~ 25,
+      TRUE ~ 0
+    )
+  )
+
+future_geo <- future_geo %>%
+  left_join(basin_mw, by = "basin") %>%
+  mutate(
+    basin_group = factor(
+      basin_ranked,
+      levels = c(
+        paste0(1:10, ". ", basin_mw$basin[1:10]),
+        "Other basins"
+      )
+    )
+  )
+
+# Lat-band rectangles for background (biome zones)
+lat_bands <- tribble(
+  ~ymin, ~ymax, ~biome,
+  -60,   -50,   "Boreal",
+  -50,   -23,   "Temperate",
+  -23,    23,   "Tropical",
+   23,    50,   "Temperate",
+   50,    60,   "Boreal"
+) %>%
+  left_join(biome_ci, by = "biome")
+
+pal_ci <- c(
+  # Biome band colors (green ramp): Boreal ~ white, Temperate light green, Tropical darker (but still light) green
+  "Boreal"    = "#f5fbf6",
+  "Temperate" = "#cfead2",
+  "Tropical"  = "#76c58a"
+)
+
+# Basin capacity palette (Greys) so basin colors are neutral
+pal_capacity <- RColorBrewer::brewer.pal(9, "Greys")
+
+pal_basin10 <- c(
+  RColorBrewer::brewer.pal(10, "Paired"),
+  "#666666"
+)
+```
+
+```{r load-country-future}
+#| warning: false
+#| message: false
+# Basin polygons (BasinATLAS level 2) + aggregate FHReD dams into those basins
+basins_lev02 <- readRDS(here("data/basins_lev02_geom.rds"))
+basins_lev02 <- sf::st_as_sf(basins_lev02)
+if (is.na(sf::st_crs(basins_lev02))) sf::st_crs(basins_lev02) <- 4326
+
+# BasinATLAS polygons can include invalid rings; fix before spatial join.
+sf::sf_use_s2(FALSE)
+basins_lev02 <- sf::st_make_valid(basins_lev02)
+basins_lev02 <- sf::st_collection_extract(basins_lev02, "POLYGON")
+basins_lev02 <- sf::st_cast(basins_lev02, "MULTIPOLYGON", warn = FALSE)
+
+future_pts <- future_geo %>%
+  st_as_sf(coords = c("Lon_Cleaned", "LAT_cleaned"), crs = 4326, remove = FALSE)
+
+future_with_basin <- st_join(
+  future_pts,
+  basins_lev02 %>% select(hybas_id),
+  left = FALSE
+)
+
+# Restore s2 for downstream ops
+sf::sf_use_s2(TRUE)
+
+basin_stats <- future_with_basin %>%
+  st_drop_geometry() %>%
+  group_by(hybas_id) %>%
+  summarise(
+    future_dams = n(),
+    future_mw   = sum(`Capacity (MW)`, na.rm = TRUE),
+    .groups     = "drop"
+  )
+
+basin_map <- basins_lev02 %>%
+  left_join(basin_stats, by = "hybas_id") %>%
+  mutate(
+    future_dams = replace_na(future_dams, 0L),
+    future_mw   = replace_na(future_mw, 0)
+  )
+
+## Optionally, country outlines could be added for context, but we omit them here
+## to keep the figure focused on basins and biomes.
+```
+
+```{r plot-basin-biome}
+#| warning: false
+#| message: false
+ggplot() +
+  # Biome latitude bands
+  geom_rect(
+    data = lat_bands,
+    aes(xmin = -180, xmax = 180, ymin = ymin, ymax = ymax, fill = biome),
+    color = NA,
+    alpha = 0.35
+  ) +
+  scale_fill_manual(values = pal_ci, name = "Biome (Li & He)") +
+  new_scale_fill() +
+  # Basins shaded by total future capacity (MW)
+  geom_sf(
+    data = basin_map,
+    aes(fill = future_mw),
+    color = NA,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_gradientn(
+    colours = pal_capacity,
+    trans = "sqrt",
+    na.value = "grey95",
+    labels = comma,
+    name = "Future capacity\n(MW)"
+  ) +
+  # Future dams as points — all projects colored by basin (no explicit top-50 emphasis)
+  geom_point(
+    data = future_geo,
+    aes(
+      x = Lon_Cleaned,
+      y = LAT_cleaned,
+      size = `Capacity (MW)`,
+      color = basin_group
+    ),
+    shape = 16,
+    alpha = 0.85,
+    inherit.aes = FALSE
+  ) +
+  scale_size_continuous(
+    range = c(1.2, 9),
+    labels = comma,
+    name = "Dam capacity (MW)"
+  ) +
+  scale_color_manual(
+    values = pal_basin10,
+    guide = "none"
+  ) +
+  # Labels for top 10 basins with repelled positions and leader lines
+  ggrepel::geom_text_repel(
+    data = basin_labels,
+    aes(x = anchor_x, y = anchor_y, label = label),
+    color = "#000000",
+    size = 3,
+    fontface = "bold",
+    family = "Times New Roman",
+    lineheight = 0.9,
+    seed = 123,
+    nudge_x = basin_labels$nudge_x,
+    nudge_y = basin_labels$nudge_y,
+    box.padding = 0.5,
+    point.padding = 0.5,
+    segment.color = "#000000",
+    segment.size = 0.4,
+    segment.alpha = 0.95,
+    segment.curvature = 0.2,
+    segment.angle = 20,
+    segment.ncp = 3,
+    min.segment.length = 0,
+    max.overlaps = 20,
+    inherit.aes = FALSE
+  ) +
+  coord_sf(xlim = c(-180, 180), ylim = c(-60, 75)) +
+  labs(
+    title = "Future hydropower: basins, biomes, and countries on one map",
+    subtitle = "Background bands = biome (Li & He). Basins (BasinATLAS lev02) = total future capacity (MW; FHReD). Points = dams colored by FHReD major basin; size = capacity (MW).",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal(base_size = 9) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold")
+  )
+```
+
+**Takeaway:** On one map you see **biomes** (latitude bands), **basins** (BasinATLAS lev02 polygons shaded by total future capacity, MW), and **projects** (dam points colored by top 10 river basins). We omit the high-latitude **tundra** band here because very few future dams fall in that biome, and the final figure will zoom into lower latitudes where most capacity is planned. Most planned hydropower is in a handful of megabasins in tropical and temperate biomes, where Li & He (2022) report higher carbon intensity.
+

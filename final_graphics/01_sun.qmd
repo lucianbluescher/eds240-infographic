@@ -1,0 +1,175 @@
+---
+title: "Hydro Sun"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 6
+    fig-height: 6
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 6, fig.height = 6, dpi = 150)
+library(tidyverse)
+library(haven)
+library(lubridate)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+dta <- read_dta(here::here("data/marginal-generation-offsets-data.dta"))
+
+inner_radius <- 1.5
+
+inner_month <- dta %>%
+  mutate(
+    month_num = month(dt),
+    month_lab = factor(month.abb[month_num], levels = month.abb)
+  ) %>%
+  group_by(month_lab) %>%
+  summarise(h_mean = mean(h, na.rm = TRUE), .groups = "drop") %>%
+  mutate(h_norm = h_mean / max(h_mean, na.rm = TRUE))
+
+month_slots <- tibble(
+  month_lab = factor(month.abb, levels = month.abb),
+  x_center  = seq(1, 23, by = 2)
+)
+
+inner_month_long <- inner_month %>% inner_join(month_slots, by = "month_lab")
+
+outer_hour <- dta %>%
+  mutate(hour = hour(dt)) %>%
+  group_by(hour) %>%
+  summarise(h_mean = mean(h, na.rm = TRUE), .groups = "drop") %>%
+  mutate(
+    h_norm   = h_mean / max(h_mean, na.rm = TRUE),
+    hour_rot = (hour - 12) %% 24,
+    inner_r  = inner_radius + 0.1,
+    outer_r  = inner_r + 0.9 * h_norm
+  )
+```
+
+```{r sun-plot}
+#| warning: false
+#| message: false
+label_r <- inner_radius + 1.15
+time_labels <- tibble(
+  hour_rot = c(0, 6, 12, 18),
+  label = c("12pm", "6pm", "12am", "6am"),
+  hjust = c(0.5, -0.1, 0.5, 1.1),
+  vjust = c(-0.5, 0.5, 1.2, 0.5)
+)
+
+month_labels <- tibble(
+  x_center = c(1, 7, 13, 19),
+  y_pos = inner_radius * 0.6,
+  label = c("Jan", "Apr", "Jul", "Oct")
+)
+
+ggplot() +
+  geom_col(
+    data = inner_month_long,
+    aes(x = x_center, y = inner_radius, fill = h_norm),
+    width = 2, color = NA
+  ) +
+  geom_segment(
+    data = outer_hour,
+    aes(x = hour_rot, xend = hour_rot, y = inner_r, yend = outer_r, color = h_norm),
+    lineend = "round", linewidth = 1.0, alpha = 0.9
+  ) +
+  geom_text(data = time_labels, aes(x = hour_rot, y = label_r, label = label),
+            hjust = time_labels$hjust, vjust = time_labels$vjust, size = 2.8, color = "gray40") +
+  geom_text(data = month_labels, aes(x = x_center, y = y_pos, label = label),
+            size = 2.5, color = "gray50") +
+  coord_polar(theta = "x", start = 0) +
+  scale_colour_gradientn(
+    colours = c("#fff7bc", "#fee391", "#fec44f", "#fe9929", "#d95f0e", "#993404"),
+    name = "Avg hydropower\n(normalized)"
+  ) +
+  scale_fill_gradientn(
+    colours = c("#fff7bc", "#fee391", "#fec44f", "#fe9929", "#d95f0e", "#993404"),
+    guide = "none"
+  ) +
+  scale_y_continuous(limits = c(0, inner_radius + 1.3), breaks = NULL) +
+  labs(
+    title = "Hydropower \"sun\": months at the core, hours as corona",
+    subtitle = "12:00 at top | Brighter = more generation",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "right",
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5, color = "gray40")
+  )
+```
+
+### Minimal version (no legend, title, or subtitle)
+
+```{r sun-plot-minimal}
+#| warning: false
+#| message: false
+sun <- ggplot() +
+  geom_col(
+    data = inner_month_long,
+    aes(x = x_center, y = inner_radius, fill = h_norm),
+    width = 2, color = NA
+  ) +
+  geom_segment(
+    data = outer_hour,
+    aes(x = hour_rot, xend = hour_rot, y = inner_r, yend = outer_r, color = h_norm),
+    lineend = "round", linewidth = 1.0, alpha = 0.9
+  ) +
+  geom_text(data = time_labels, aes(x = hour_rot, y = label_r, label = label),
+            hjust = time_labels$hjust, vjust = time_labels$vjust, size = 3.5, color = "#222222") +
+  geom_text(data = month_labels, aes(x = x_center, y = y_pos, label = label),
+            size = 3.5, color = "#222222") +
+  coord_polar(theta = "x", start = 0) +
+  scale_colour_gradientn(
+    colours = c("#fff7bc", "#fee391", "#fec44f", "#fe9929", "#d95f0e", "#993404"),
+    name = NULL,
+    guide = guide_colorbar(title = NULL)
+  ) +
+  scale_fill_gradientn(
+    colours = c("#fff7bc", "#fee391", "#fec44f", "#fe9929", "#d95f0e", "#993404"),
+    guide = "none"
+  ) +
+  scale_y_continuous(limits = c(0, inner_radius + 1.3), breaks = NULL) +
+  labs(x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "right",
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_blank(),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    panel.background = element_rect(fill = "transparent", color = NA)
+  )
+
+ggsave(
+  filename = "sun.pdf",
+  plot = sun,
+  bg = "transparent")
+
+
+```
+
+**Takeaway:** Hydropower generation follows clear daily and seasonal patterns — stronger during peak daytime hours and in certain months, which helps grid operators balance supply and demand.
+
+**Data:** Hourly generation from marginal-generation-offsets-data.dta (Platte River Power Authority / Colorado River Storage Project). Averages across months and hours are normalized so brighter = more hydropower output. Regional example, not global.
+
+**Key terms:** Normalized = scaled so the max = 1 (brighter = more output). Marginal generation = power produced when demand is high (e.g., midday). Corona = outer rays; disc = inner circle.

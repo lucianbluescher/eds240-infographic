@@ -1,0 +1,124 @@
+---
+title: "Carbon Intensity: 20-Year vs 100-Year Horizon"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 8
+    fig-height: 8
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 8, fig.height = 8, dpi = 150)
+library(tidyverse)
+library(patchwork)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+# Li & He (2022) Table S3 — median CI (kg CO2e/MWh) at 20-year and 100-year GWP horizon
+trophic_data <- tibble(
+  Category = factor(c("Oligotrophic", "Mesotrophic", "Eutrophic"),
+                    levels = c("Oligotrophic", "Mesotrophic", "Eutrophic")),
+  CI_20yr  = c(67.2, 116.0, 248.0),
+  CI_100yr = c(55.6, 69.1, 116.7)
+)
+
+depth_data <- tibble(
+  Category = factor(c("Shallow (<20 m)", "Medium (20–100 m)", "Deep (>100 m)"),
+                    levels = c("Deep (>100 m)", "Medium (20–100 m)", "Shallow (<20 m)")),
+  CI_20yr  = c(233.0, 114.3, 35.6),
+  CI_100yr = c(124.5, 66.0, 27.7)
+)
+
+trophic_long <- trophic_data %>%
+  pivot_longer(cols = starts_with("CI"), names_to = "Horizon", values_to = "CI") %>%
+  mutate(Horizon = factor(if_else(Horizon == "CI_20yr", "20-Year", "100-Year"), levels = c("20-Year", "100-Year")))
+
+depth_long <- depth_data %>%
+  pivot_longer(cols = starts_with("CI"), names_to = "Horizon", values_to = "CI") %>%
+  mutate(Horizon = factor(if_else(Horizon == "CI_20yr", "20-Year", "100-Year"), levels = c("20-Year", "100-Year")))
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+# Palette: 20-year = warmer (short-term methane impact), 100-year = baltic blue
+horizon_fill <- c("20-Year" = "#c45c2a", "100-Year" = "#1c5d99")
+
+plot_trophic <- ggplot(trophic_long, aes(x = Category, y = CI, fill = Horizon)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#222222", linewidth = 0.5) +
+  scale_fill_manual(values = horizon_fill) +
+  labs(
+    title = "Carbon intensity by trophic level",
+    subtitle = "Lower nutrients (Oligotrophic) = lower CI. 20-year GWP emphasizes short-term methane.",
+    x = "Trophic state",
+    y = "Median CI (kg CO₂e/MWh)",
+    fill = "Time horizon"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+plot_depth <- ggplot(depth_long, aes(x = Category, y = CI, fill = Horizon)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#222222", linewidth = 0.5) +
+  scale_fill_manual(values = horizon_fill) +
+  labs(
+    title = "Carbon intensity by reservoir depth",
+    subtitle = "Deep reservoirs are much cleaner than shallow ones.",
+    x = "Reservoir depth",
+    y = "Median CI (kg CO₂e/MWh)",
+    fill = "Time horizon"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid.major.y = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+# Heatmaps: same data, Category × Horizon, fill = CI
+heat_trophic <- ggplot(trophic_long, aes(x = Horizon, y = Category, fill = CI)) +
+  geom_tile(color = "white", linewidth = 0.6) +
+  geom_text(aes(label = round(CI)), color = "white", fontface = "bold", size = 3.2) +
+  scale_fill_viridis_c(option = "viridis", name = "Median CI\n(kg CO₂e/MWh)") +
+  labs(title = "Trophic level (heatmap)", x = NULL, y = NULL) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(hjust = 0)
+  )
+
+heat_depth <- ggplot(depth_long, aes(x = Horizon, y = Category, fill = CI)) +
+  geom_tile(color = "white", linewidth = 0.6) +
+  geom_text(aes(label = round(CI)), color = "white", fontface = "bold", size = 3.2) +
+  scale_fill_viridis_c(option = "viridis", name = "Median CI\n(kg CO₂e/MWh)") +
+  labs(title = "Reservoir depth (heatmap)", x = NULL, y = NULL) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold"),
+    axis.text.y = element_text(hjust = 0)
+  )
+
+(plot_trophic | plot_depth) / (heat_trophic | heat_depth) +
+  plot_annotation(
+    caption = "Source: Li & He (2022) Table S3. Dotted line = 80 kg CO₂e/MWh (low-carbon target)."
+  ) +
+  theme(plot.caption = element_text(size = 8, color = "gray50"))
+```
+
+**Takeaway:** Deep and oligotrophic reservoirs have the lowest carbon intensity; shallow and eutrophic have the highest. The 20-year GWP horizon (warmer bars) makes short-term methane impact more visible than the 100-year horizon (blue bars).

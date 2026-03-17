@@ -1,0 +1,541 @@
+---
+title: "Reservoir CO2 and CH4 Emissions — Data Visualizations"
+author: "Your Name"
+date: today
+format:
+  pdf:
+    documentclass: article
+    fig-height: 5
+    fig-width: 10
+  html:
+    toc: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 10, fig.height = 5, fig.align = "center"
+)
+```
+
+# Introduction
+
+Visualizations based on **Soued et al. (2022)** "Reservoir CO2 and CH4 emissions and their climate impact over the period 1900–2060" (*Nature Geoscience*). Data are imported from **Supplementary Data 1** (or your own files).
+
+# Load Packages
+
+```{r load-packages}
+library(tidyverse)
+library(scales)
+library(patchwork)
+library(readxl)
+library(here)
+```
+
+# Import Data
+
+```{r import-data}
+raw_ts <- readxl::read_xlsx(here::here("data/moesm.xlsx"), sheet = 1)
+```
+
+# Wrangling
+
+Build the six datasets the plots use. **Edit the column names** in the code to match your file.
+
+- **totals**: `year`, `tmol_c` (total C emissions, Tmol yr⁻¹), `rf_mw` (total RF, mW m⁻²).
+- **emissions_pathway**: `year`, `pathway`, `tmol_c`.
+- **rf_pathway**: `year`, `pathway`, `rf_mw`.
+- **climate_share**: `year`, `zone`, `pct`.
+- **area_growth**: `year`, `area_105_km2` (reservoir area in 10⁵ km²).
+- **sectors_2020**: `sector`, `ch4_pct`.
+
+```{r wrangle}
+# Match to Soued Supplementary Data 1 structure (Year, CO2_diff, CH4_diff, CH4_bub, CH4_deg, RF_*_rcp6, Cumulative_reservoir_area)
+pathway_cols_c  <- c("CO2_diff", "CH4_diff", "CH4_bub", "CH4_deg")
+pathway_cols_rf <- c("RF_co2dif_rcp6", "RF_ch4dif_rcp6", "RF_ch4bub_rcp6", "RF_ch4deg_rcp6")
+pathway_labels  <- c("CO2 diffusion", "CH4 diffusion", "CH4 ebullition", "CH4 degassing")
+
+emissions_pathway <- raw_ts %>%
+  select(year = Year, all_of(pathway_cols_c)) %>%
+  pivot_longer(-year, names_to = "pathway", values_to = "tmol_c") %>%
+  mutate(pathway = factor(pathway, levels = pathway_cols_c, labels = pathway_labels))
+
+rf_pathway <- raw_ts %>%
+  select(year = Year, all_of(pathway_cols_rf)) %>%
+  pivot_longer(-year, names_to = "pathway", values_to = "rf_mw") %>%
+  mutate(pathway = factor(pathway, levels = pathway_cols_rf, labels = pathway_labels))
+
+totals <- raw_ts %>%
+  transmute(
+    year = Year,
+    tmol_c = CO2_diff + CH4_diff + CH4_bub + CH4_deg,
+    rf_mw = RF_tot_rcp6
+  )
+
+# Climate zone: not in this sheet — use separate data or leave empty
+climate_share <- tibble(year = integer(), zone = character(), pct = double())
+
+# Reservoir area (km²); divide by 1e5 if your data is already in 10⁵ km²
+area_growth <- raw_ts %>%
+  select(year = Year, area_105_km2 = Cumulative_reservoir_area) %>%
+  mutate(area_105_km2 = area_105_km2 / 1e5)  # adjust or remove if already in 10⁵ km²
+
+# Sector comparison: placeholder; replace with your sector data
+sectors_2020 <- tibble(
+  sector = c("Energy", "Waste", "Agriculture", "Reservoirs", "Other"),
+  ch4_pct = c(32, 20, 40, 5.2, 2.8)
+)
+
+# Extra wrangling for unique viz
+pathway_fill <- c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                  "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b")
+pathway_order <- c("CH4 degassing", "CH4 ebullition", "CH4 diffusion", "CO2 diffusion")
+emissions_stream <- emissions_pathway %>%
+  mutate(pathway = factor(pathway, levels = rev(pathway_order)))
+
+# Slope chart: pathway share 1970 vs 2020
+share_years <- emissions_pathway %>%
+  filter(year %in% c(1970, 2020)) %>%
+  group_by(year) %>%
+  mutate(pct = 100 * tmol_c / sum(tmol_c)) %>%
+  ungroup()
+
+# Pathway ranking over time (bump chart)
+pathway_rank <- emissions_pathway %>%
+  group_by(year) %>%
+  mutate(rank = rank(-tmol_c, ties.method = "min")) %>%
+  ungroup()
+
+# RCP scenario comparison
+rcp_comparison <- raw_ts %>%
+  select(year = Year, RCP4.5 = RF_tot_rcp4, RCP6 = RF_tot_rcp6, RCP8.5 = RF_tot_rcp8) %>%
+  pivot_longer(-year, names_to = "scenario", values_to = "rf_mw")
+
+# Waffle / tile grid: pathway share at 2020 (100 tiles)
+pct_2020 <- emissions_pathway %>% filter(year == 2020) %>%
+  mutate(pct = 100 * tmol_c / sum(tmol_c)) %>% arrange(desc(pct))
+n_tiles <- round(pct_2020$pct)
+n_tiles[4] <- 100 - sum(n_tiles[1:3])
+share_2020 <- pct_2020 %>% select(pathway, pct) %>% mutate(ntile = n_tiles) %>%
+  uncount(ntile) %>% group_by(pathway) %>% mutate(row = (row_number() - 1) %/% 10, col = (row_number() - 1) %% 10) %>% ungroup()
+
+# Time slices for dot plot and bubbles
+slices <- emissions_pathway %>% filter(year %in% c(1900, 1987, 2020, 2060))
+
+# Waterfall: change in emissions 1970 → 2020 by pathway
+waterfall_data <- emissions_pathway %>% filter(year %in% c(1970, 2020)) %>%
+  pivot_wider(names_from = year, values_from = tmol_c, names_prefix = "y") %>%
+  mutate(change = y2020 - y1970, pathway = fct_reorder(pathway, change))
+
+# Heat map: year × pathway (emissions share %)
+heat_share <- emissions_pathway %>% group_by(year) %>%
+  mutate(pct = 100 * tmol_c / sum(tmol_c)) %>% ungroup()
+
+# Pathway min/max share (dumbbell)
+share_range <- emissions_pathway %>% group_by(year) %>% mutate(pct = 100 * tmol_c / sum(tmol_c)) %>% ungroup() %>%
+  group_by(pathway) %>% summarise(min_pct = min(pct), max_pct = max(pct), .groups = "drop") %>%
+  mutate(pathway = fct_reorder(pathway, max_pct))
+
+# Key years for timeline (peak emissions, crossovers)
+totals_rank <- totals %>% mutate(rank_em = row_number(desc(tmol_c)))
+peak_year <- totals_rank %>% filter(rank_em == 1) %>% pull(year) %>% first()
+```
+
+# Graph 1: Emissions vs Radiative Forcing (Decoupling)
+
+```{r graph1-decoupling}
+p1a <- ggplot(totals, aes(x = year, y = tmol_c)) +
+  geom_line(color = "#2166ac", size = 1.2) +
+  geom_point(color = "#2166ac", size = 2) +
+  labs(title = "Annual reservoir C emissions", y = "Tmol C yr⁻¹", x = NULL) +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank())
+
+p1b <- ggplot(totals, aes(x = year, y = rf_mw)) +
+  geom_line(color = "#b2182b", size = 1.2) +
+  geom_point(color = "#b2182b", size = 2) +
+  labs(title = "Reservoir-induced radiative forcing", y = "mW m⁻²", x = "Year") +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank())
+
+p1a / p1b +
+  plot_annotation(
+    title = "Emissions peaked in 1987; radiative forcing keeps rising",
+    subtitle = "Different atmospheric lifetimes of CO2 vs CH4 drive the decoupling (Soued et al. 2022)"
+  )
+```
+
+**Takeaway:** C emissions peaked around 1987, while radiative forcing continues to rise because CH4 has a shorter lifetime than CO2 but much higher warming potential, so legacy methane keeps adding to RF.
+
+# Graph 2: Stacked Area — Emissions by Pathway
+
+```{r graph2-emissions-pathway}
+emissions_pathway %>%
+  mutate(pathway = factor(pathway, levels = c("CH4 degassing", "CH4 ebullition", "CH4 diffusion", "CO2 diffusion"))) %>%
+  ggplot(aes(x = year, y = tmol_c, fill = pathway)) +
+  geom_area(alpha = 0.85, color = "white", size = 0.2) +
+  scale_fill_manual(values = c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                               "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b")) +
+  labs(title = "Reservoir carbon emissions by pathway (1900–2060)",
+       subtitle = "Shift from CO2 to CH4 (ebullition + degassing) dominates by 2060",
+       x = "Year", y = "Tmol C yr⁻¹", fill = "Pathway") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+**Takeaway:** Emissions shift from CO2-dominated to CH4-dominated. By 2060, ebullition and degassing dominate as reservoir construction expands in warmer regions where methane production is higher.
+
+# Graph 3: Stacked Area — Radiative Forcing by Pathway
+
+```{r graph3-rf-pathway}
+rf_pathway %>%
+  mutate(pathway = factor(pathway, levels = c("CH4 degassing", "CH4 ebullition", "CH4 diffusion", "CO2 diffusion"))) %>%
+  ggplot(aes(x = year, y = rf_mw, fill = pathway)) +
+  geom_area(alpha = 0.85, color = "white", size = 0.2) +
+  scale_fill_manual(values = c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                               "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b")) +
+  labs(title = "Reservoir-induced radiative forcing by pathway",
+       subtitle = "CH4 ebullition and degassing drive RF despite lower C flux (Soued et al. 2022)",
+       x = "Year", y = "mW m⁻²", fill = "Pathway") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+**Takeaway:** RF is increasingly driven by CH4 ebullition and degassing. Despite lower carbon flux, CH4’s higher global warming potential makes it the main contributor to reservoir-induced RF by mid-century.
+
+# Graph 4: Reservoir Emissions vs Other Sectors (2020)
+
+```{r graph4-sector-context}
+sectors_2020 %>%
+  filter(!is.na(ch4_pct)) %>%
+  mutate(sector = fct_reorder(sector, ch4_pct)) %>%
+  ggplot(aes(x = sector, y = ch4_pct, fill = (sector == "Reservoirs"))) +
+  geom_col(width = 0.7, alpha = 0.9) +
+  scale_fill_manual(values = c("TRUE" = "#b2182b", "FALSE" = "gray70"), guide = "none") +
+  coord_flip() +
+  labs(title = "Share of global anthropogenic CH4 emissions (2020)",
+       subtitle = "Reservoirs = 5.2% (Soued et al. 2022)",
+       x = NULL, y = "% of global anthropogenic CH4") +
+  theme_minimal() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+**Takeaway:** Reservoirs contribute about 5% of global anthropogenic CH4 emissions, smaller than energy, waste, and agriculture, but growing as tropical hydropower expands.
+
+# Graph 5: Slope Chart — Pathway Share 1970 vs 2020
+
+```{r graph5-slope}
+slope_data <- share_years %>%
+  select(year, pathway, pct) %>%
+  pivot_wider(names_from = year, values_from = pct, names_prefix = "y") %>%
+  filter(!is.na(y1970) | !is.na(y2020)) %>%
+  mutate(y1970 = replace_na(y1970, 0), y2020 = replace_na(y2020, 0))
+
+ggplot(slope_data) +
+  geom_segment(aes(x = 1970, xend = 2020, y = y1970, yend = y2020, color = pathway), 
+               linewidth = 1.5, lineend = "round") +
+  geom_point(aes(1970, y1970, color = pathway), size = 4, shape = 21, fill = "white", stroke = 1.5) +
+  geom_point(aes(2020, y2020, color = pathway), size = 4) +
+  scale_color_manual(values = c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                                "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b")) +
+  scale_x_continuous(breaks = c(1970, 2020), limits = c(1965, 2025)) +
+  labs(title = "Pathway share shift: 1970 → 2020",
+       subtitle = "CO2 diffusion dropped from dominant to ~40%; CH4 ebullition and degassing rose sharply",
+       x = NULL, y = "% of reservoir C emissions", color = "Pathway") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+**Takeaway:** CO2 diffusion fell from the dominant share to ~40%; CH4 ebullition and degassing rose substantially as reservoir construction and tropical expansion increased methane pathways.
+
+# Graph 6: Connected Scatter — Emissions vs RF by Year
+
+```{r graph6-connected-scatter}
+ggplot(totals, aes(x = tmol_c, y = rf_mw)) +
+  geom_path(linewidth = 0.8, color = "gray50", alpha = 0.7) +
+  geom_point(aes(color = year), size = 3) +
+  scale_color_viridis_c(option = "plasma", end = 0.9) +
+  geom_text(data = totals %>% filter(year %in% c(1900, 1987, 2020, 2060)),
+            aes(label = year), hjust = -0.3, size = 3) +
+  labs(title = "Emissions–RF trajectory (1900–2060)",
+       subtitle = "Decoupling: emissions peaked in 1987 while RF keeps rising",
+       x = "Total C emissions (Tmol yr⁻¹)", y = "Radiative forcing (mW m⁻²)", color = "Year") +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank())
+```
+
+**Takeaway:** The loop shows how emissions and RF decouple: C emissions peak around 1987, but RF continues to increase because CH4 persists longer in the atmosphere, so past emissions keep adding to forcing.
+
+# Graph 7: Stacked Area — Emissions by Pathway (Alternate)
+
+```{r graph7-stacked}
+emissions_stream %>%
+  ggplot(aes(x = year, y = tmol_c, fill = pathway)) +
+  geom_area(alpha = 0.85, color = "white", size = 0.2) +
+  scale_fill_manual(values = c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                               "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b")) +
+  labs(title = "Reservoir C emissions by pathway (flow view)",
+       subtitle = "CH4 pathways displace CO2 diffusion over time",
+       x = "Year", y = "Tmol C yr⁻¹", fill = "Pathway") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+**Takeaway:** CH4 pathways widen over time while CO2 diffusion narrows, emphasizing the shift toward methane-dominated reservoir emissions.
+
+# Graph 8: Bump Chart — Pathway Ranking Over Time
+
+```{r graph8-bump}
+ggplot(pathway_rank, aes(x = year, y = rank, color = pathway)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  scale_y_reverse(breaks = 1:4) +
+  scale_color_manual(values = c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                                "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b")) +
+  labs(title = "Pathway ranking by emissions over time",
+       subtitle = "CO2 diffusion fell from #1 to #3; CH4 ebullition and degassing rose in rank",
+       x = "Year", y = "Rank (1 = highest)", color = "Pathway") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+**Takeaway:** CO2 diffusion ranked #1 until the late 1970s, then dropped to #3; CH4 ebullition and degassing moved up as reservoir construction expanded in warmer regions.
+
+# Graph 9: Lollipop — Pathway Contributions at Peak Year
+
+```{r graph9-lollipop}
+peak_yr <- 1987
+peak_data <- emissions_pathway %>% filter(year == peak_yr) %>%
+  mutate(pathway = fct_reorder(pathway, tmol_c))
+
+ggplot(peak_data, aes(x = pathway, y = tmol_c, fill = pathway)) +
+  geom_segment(aes(x = pathway, xend = pathway, y = 0, yend = tmol_c), linewidth = 1.2) +
+  geom_point(size = 6, shape = 21, color = "white", stroke = 1.5) +
+  scale_fill_manual(values = c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                               "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b"), guide = "none") +
+  coord_flip() +
+  labs(title = paste("Pathway contributions in peak year", peak_yr),
+       subtitle = "CO2 diffusion still largest at emissions peak; CH4 ebullition and degassing rising",
+       x = NULL, y = "Tmol C yr⁻¹") +
+  theme_minimal() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+**Takeaway:** At the emissions peak (1987), CO2 diffusion remained the largest pathway, but CH4 ebullition and degassing had already grown substantially and would overtake it later.
+
+# Graph 10: Fan Chart — RCP Scenario Comparison
+
+```{r graph10-rcp}
+ggplot(rcp_comparison, aes(x = year, y = rf_mw, color = scenario)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  scale_color_manual(values = c("RCP4.5" = "#2166ac", "RCP6" = "#f4a582", "RCP8.5" = "#b2182b")) +
+  labs(title = "Radiative forcing under RCP scenarios",
+       subtitle = "Divergence after 2015: RCP8.5 projects ~20% higher RF by 2060",
+       x = "Year", y = "mW m⁻²", color = "Scenario") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+**Takeaway:** Scenarios diverge after the historical period: RCP8.5 yields notably higher reservoir-induced RF than RCP4.5 by 2060, illustrating how future climate policy shapes reservoir emissions.
+
+---
+
+# 10 More Infographics
+
+# Graph 11: Waffle Chart — Pathway Share 2020 (100 tiles)
+
+```{r graph11-waffle}
+pathway_fill <- c("CO2 diffusion" = "#2166ac", "CH4 diffusion" = "#67a9cf",
+                  "CH4 ebullition" = "#ef8a62", "CH4 degassing" = "#b2182b")
+ggplot(share_2020, aes(x = col, y = -row, fill = pathway)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  scale_fill_manual(values = pathway_fill, drop = FALSE) +
+  coord_fixed() +
+  labs(title = "Pathway share of reservoir C emissions (2020)",
+       subtitle = "Each tile = 1% — CH4 ebullition and degassing dominate",
+       fill = "Pathway") +
+  theme_void() +
+  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5), plot.subtitle = element_text(hjust = 0.5))
+```
+
+**Takeaway:** One tile per percent makes the 2020 mix intuitive: methane pathways (ebullition + degassing) take most of the grid; CO₂ diffusion is a minority.
+
+# Graph 12: Dot Plot — Pathway Emissions at Four Time Slices
+
+```{r graph12-dot-slices}
+ggplot(slices, aes(x = factor(year), y = tmol_c, color = pathway)) +
+  geom_point(size = 5, alpha = 0.9) +
+  geom_line(aes(group = pathway), linewidth = 0.8, alpha = 0.6) +
+  scale_color_manual(values = pathway_fill) +
+  labs(title = "Pathway emissions at key years",
+       subtitle = "1900 → 1987 → 2020 → 2060: CO2 peaks then falls; CH4 pathways rise",
+       x = "Year", y = "Tmol C yr⁻¹", color = "Pathway") +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+```
+
+**Takeaway:** Four snapshots show the story: CO₂ diffusion rises to peak then declines; CH₄ ebullition and degassing grow through 2020 and remain high to 2060.
+
+# Graph 13: Waterfall — Change in Emissions by Pathway (1970 → 2020)
+
+```{r graph13-waterfall}
+ggplot(waterfall_data, aes(x = pathway, y = change, fill = pathway)) +
+  geom_col(alpha = 0.9, width = 0.7) +
+  geom_hline(yintercept = 0, linewidth = 0.5) +
+  scale_fill_manual(values = pathway_fill, guide = "none") +
+  labs(title = "Change in pathway emissions: 1970 → 2020",
+       subtitle = "CO2 diffusion fell; CH4 ebullition and degassing rose",
+       x = NULL, y = "Δ Tmol C yr⁻¹") +
+  theme_minimal() +
+  theme(panel.grid.major.x = element_blank())
+```
+
+**Takeaway:** The waterfall shows who drove the shift: CO₂ diffusion dropped; CH₄ ebullition and degassing increased, so the total mix moved toward methane.
+
+# Graph 14: Heat Map — Pathway Share Over Time (%)
+
+```{r graph14-heatmap}
+ggplot(heat_share, aes(x = year, y = pathway, fill = pct)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_fill_viridis_c(option = "inferno", end = 0.95) +
+  scale_y_discrete(limits = rev(pathway_labels)) +
+  labs(title = "Pathway share of reservoir C emissions over time",
+       subtitle = "Darker = higher share in that year",
+       x = "Year", y = NULL, fill = "%") +
+  theme_minimal() +
+  theme(panel.grid = element_blank(), legend.position = "bottom")
+```
+
+**Takeaway:** The heat map shows when each pathway dominates: CO₂ diffusion is strong early, then fades; CH₄ ebullition and degassing strengthen from the 1970s onward.
+
+# Graph 15: Dumbbell — Min vs Max Pathway Share (1900–2060)
+
+```{r graph15-dumbbell}
+ggplot(share_range, aes(x = pathway)) +
+  geom_segment(aes(x = pathway, xend = pathway, y = min_pct, yend = max_pct, color = pathway), linewidth = 2, lineend = "round") +
+  geom_point(aes(y = min_pct), size = 4, shape = 21, fill = "white", stroke = 1.5) +
+  geom_point(aes(y = max_pct), size = 4) +
+  scale_color_manual(values = pathway_fill, guide = "none") +
+  scale_fill_manual(values = pathway_fill, guide = "none") +
+  coord_flip() +
+  labs(title = "Range of pathway share across 1900–2060",
+       subtitle = "Bulbs = min and max %; CO2 diffusion had the biggest swing",
+       x = NULL, y = "% of reservoir C emissions") +
+  theme_minimal() +
+  theme(panel.grid.major.y = element_blank())
+```
+
+**Takeaway:** CO₂ diffusion has the widest range (dominant to minor); CH₄ pathways narrow into a band of substantial share by end-of-century.
+
+# Graph 16: Small Multiples — Four Key Series
+
+```{r graph16-small-multiples}
+p_tmol <- ggplot(totals, aes(year, tmol_c)) + geom_line(color = "#2166ac", linewidth = 1) +
+  labs(title = "Total C emissions", y = "Tmol yr⁻¹", x = NULL) + theme_minimal() + theme(panel.grid.minor = element_blank())
+p_rf   <- ggplot(totals, aes(year, rf_mw)) + geom_line(color = "#b2182b", linewidth = 1) +
+  labs(title = "Radiative forcing", y = "mW m⁻²", x = NULL) + theme_minimal() + theme(panel.grid.minor = element_blank())
+p_area <- ggplot(area_growth, aes(year, area_105_km2)) + geom_line(color = "#238b45", linewidth = 1) +
+  labs(title = "Cumulative reservoir area", y = "×10⁵ km²", x = NULL) + theme_minimal() + theme(panel.grid.minor = element_blank())
+p_n    <- ggplot(raw_ts, aes(Year, Cum_reservoir_n)) + geom_line(color = "#88419d", linewidth = 1) +
+  labs(title = "Cumulative reservoir count", y = "N", x = "Year") + theme_minimal() + theme(panel.grid.minor = element_blank())
+(p_tmol | p_rf) / (p_area | p_n) +
+  plot_annotation(title = "Reservoir emissions and infrastructure over time", theme = theme(plot.title = element_text(hjust = 0.5)))
+```
+
+**Takeaway:** Four panels tell the infrastructure–emissions story: area and count grow; emissions peak then fall; RF keeps rising, highlighting decoupling.
+
+# Graph 17: Bubble Chart — Emissions vs RF by Decade
+
+```{r graph17-bubble}
+decade <- totals %>% mutate(decade = (year %/% 10) * 10) %>%
+  group_by(decade) %>% summarise(tmol_c = mean(tmol_c), rf_mw = mean(rf_mw), n = n(), .groups = "drop")
+ggplot(decade, aes(x = decade, y = rf_mw, size = tmol_c)) +
+  geom_point(alpha = 0.7, color = "#2166ac", fill = "#67a9cf", shape = 21, stroke = 1) +
+  scale_size_continuous(range = c(3, 15), name = "Mean C emissions\n(Tmol yr⁻¹)") +
+  labs(title = "Decade averages: radiative forcing vs emissions",
+       subtitle = "Bubble size = mean C emissions; height = mean RF — decoupling visible",
+       x = "Decade", y = "Mean RF (mW m⁻²)") +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank())
+```
+
+**Takeaway:** By decade, RF (y) keeps rising while bubble size (emissions) peaks then shrinks, so the decoupling between emissions and forcing is clear at a glance.
+
+# Graph 18: Radial Bar — Pathway RF Contribution at 2060
+
+```{r graph18-radial}
+rf_2060 <- rf_pathway %>% filter(year == 2060) %>% mutate(pathway = fct_reorder(pathway, rf_mw))
+theta <- seq(0, 2 * pi, length.out = 5)[1:4]
+rf_2060 <- rf_2060 %>% mutate(
+  end_angle = cumsum(rf_mw) / sum(rf_mw) * 2 * pi,
+  start_angle = lag(end_angle, default = 0),
+  mid = (start_angle + end_angle) / 2
+)
+ggplot(rf_2060) +
+  geom_rect(aes(xmin = 0.5, xmax = 1, ymin = start_angle, ymax = end_angle, fill = pathway), alpha = 0.9) +
+  coord_polar(theta = "y", start = -pi/2) +
+  scale_fill_manual(values = pathway_fill) +
+  scale_y_continuous(limits = c(0, 2*pi), breaks = NULL) +
+  labs(title = "Radiative forcing by pathway (2060)", subtitle = "CH4 ebullition and degassing dominate", fill = "Pathway") +
+  theme_void() +
+  theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5))
+```
+
+**Takeaway:** At 2060, RF is mostly CH₄ ebullition and degassing; CO₂ and CH₄ diffusion are smaller slices — methane drives long-term forcing.
+
+# Graph 19: Sparkline Table — Pathway Trends in One View
+
+```{r graph19-sparklines}
+spark <- emissions_pathway %>% group_by(pathway) %>%
+  summarise(min_y = min(tmol_c), max_y = max(tmol_c), .groups = "drop")
+emissions_spark <- emissions_pathway %>%
+  left_join(spark, by = "pathway") %>%
+  mutate(ys = (tmol_c - min_y) / (max_y - min_y + 1e-9))
+ggplot(emissions_spark, aes(x = year, y = ys)) +
+  geom_line(aes(color = pathway), linewidth = 1) +
+  facet_wrap(~ pathway, ncol = 2, scales = "free_y") +
+  scale_color_manual(values = pathway_fill, guide = "none") +
+  labs(title = "Pathway trends (normalized 0–1 within pathway)",
+       subtitle = "CO2 peaks and falls; CH4 pathways rise and plateau",
+       x = "Year", y = NULL) +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(), panel.grid.minor = element_blank(), strip.text = element_text(face = "bold"))
+```
+
+**Takeaway:** Normalized sparklines let you compare shape: CO₂ diffusion rises then falls; CH₄ pathways rise and stay high — the shift is in the curves.
+
+# Graph 20: Timeline — Key Milestones
+
+```{r graph20-timeline}
+milestones <- tibble(
+  year = c(1900, 1950, peak_year, 1990, 2015, 2020, 2060),
+  label = c("Era begins", "Post-war boom", "Peak C emissions", "First wave peak", "Paris", "Today", "Projection end"),
+  y = rep(0, 7)
+)
+rf_rescaled <- totals %>% mutate(rf_s = rescale(rf_mw, to = c(-0.3, 0.3)))
+ggplot(milestones, aes(x = year, y = y)) +
+  geom_line(data = rf_rescaled, aes(x = year, y = rf_s), color = "gray70", linewidth = 0.8, inherit.aes = FALSE) +
+  geom_segment(aes(x = year, xend = year, y = -0.35, yend = 0.35), linewidth = 0.8, color = "#2166ac") +
+  geom_point(size = 4, color = "#b2182b", fill = "white", shape = 21, stroke = 1.5) +
+  geom_text(aes(y = -0.5, label = paste0(year, "\n", label)), size = 2.8, hjust = 0.5, vjust = 1) +
+  scale_x_continuous(limits = c(1895, 2065)) +
+  scale_y_continuous(limits = c(-0.7, 0.5), breaks = NULL) +
+  labs(title = "Timeline: reservoir emissions era and key milestones",
+       subtitle = "Vertical bars = milestones; gray curve = RF (rescaled)",
+       x = "Year", y = NULL) +
+  theme_minimal() +
+  theme(panel.grid = element_blank())
+```
+
+**Takeaway:** One timeline ties infrastructure and policy to the data: peak emissions, construction waves, and Paris anchor the story of rising RF despite falling emissions.
+
+# Note on Data
+
+Data are **imported by you** from Soued et al. (2022) Supplementary Data 1 (or your own files). Set `data_path` in the import chunk and adjust the wrangling column names to match your file.

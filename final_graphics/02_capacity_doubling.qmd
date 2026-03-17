@@ -1,0 +1,67 @@
+---
+title: "Capacity Doubling"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 6
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 6, fig.height = 5, dpi = 150)
+library(tidyverse)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+nze <- read_csv(here::here("data/NZE2021_AnnexA.csv"), show_col_types = FALSE)
+
+capacity <- nze %>%
+  filter(
+    Product == "Hydro",
+    Flow == "Installed total power capacity",
+    Unit == "GW",
+    Year %in% c(2019, 2050)
+  ) %>%
+  select(Year, Hydropower = Value) %>%
+  mutate(
+    x = c(0.25, 0.75),
+    y = c(0.6, 0.6),
+    size = sqrt(Hydropower) / 1.2  # large bubbles (diameter in mm)
+  )
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+# Two big bubbles: 2019 vs 2050 capacity, one arrow for change
+ggplot(capacity, aes(x = x, y = y, size = size)) +
+  geom_point(shape = 21, fill = "#1c5d99", color = "#222222", stroke = 1.5) +
+  annotate("segment", x = 0.25, xend = 0.75, y = 0.25, yend = 0.25,
+           color = "#222222", linewidth = 1.5,
+           arrow = arrow(length = unit(0.2, "inches"), type = "closed")) +
+  scale_size_identity() +
+  scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
+  theme_void() +
+  theme(
+    legend.position = "none",
+    plot.margin = margin(0, 0, 0, 0)
+  )
+```
+
+**Takeaway:** The IEA Net Zero pathway requires roughly doubling global hydropower capacity by 2050 — from ~1300 GW today to ~2600 GW. Installed capacity is the total power that hydropower plants can produce at full output.
+
+**Data:** IEA Net Zero by 2050 scenario (NZE2021_AnnexA). Installed capacity in GW for Hydro in 2019 and 2050. Bubble size ∝ √capacity.
+
+**Key terms:** GW = gigawatts (1 GW ≈ 1 million kW). Installed capacity = maximum power a plant can produce if running at full output.

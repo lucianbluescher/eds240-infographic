@@ -1,0 +1,80 @@
+---
+title: "Combined Timeline: Decoupling, Peak to Net Zero, River (1950–2050)"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 12
+    fig-height: 18
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 12, fig.height = 18, dpi = 150)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(here)
+library(patchwork)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+raw <- read_xlsx(here("data/moesm.xlsx"), sheet = 1) %>%
+  filter(Year >= 1950, Year <= 2050)
+
+# Three series in long format — each gets its own panel with its own y-axis
+facet_data <- raw %>%
+  transmute(
+    year = Year,
+    emissions = CO2_diff + CH4_diff + CH4_bub + CH4_deg,
+    rf_mw = RF_tot_rcp6,
+    area_105 = Cumulative_reservoir_area / 1e5
+  ) %>%
+  pivot_longer(cols = c(emissions, rf_mw, area_105), names_to = "series", values_to = "y") %>%
+  mutate(
+    series = recode(series,
+      "emissions" = "1. Decoupling: Carbon emissions (Tmol C/yr)",
+      "rf_mw" = "2. Radiative forcing (mW/m²)",
+      "area_105" = "3. River: Reservoir area (100,000 km²)"
+    ),
+    series = factor(series, levels = c(
+      "1. Decoupling: Carbon emissions (Tmol C/yr)",
+      "2. Radiative forcing (mW/m²)",
+      "3. River: Reservoir area (100,000 km²)"
+    ))
+  )
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+# Stacked panels, each with its own y-axis (scales = "free_y")
+ggplot(facet_data, aes(x = year, y = y)) +
+  geom_ribbon(aes(ymin = 0, ymax = y), alpha = 0.4, fill = "#bbcde5") +
+  geom_line(linewidth = 1.5, color = "#1c5d99") +
+  geom_point(size = 2, color = "#1c5d99", alpha = 0.8) +
+  facet_wrap(~ series, ncol = 1, scales = "free_y", strip.position = "left") +
+  scale_x_continuous(limits = c(1950, 2050), breaks = seq(1960, 2040, 20)) +
+  labs(
+    title = "Decoupling, peak to net zero, and river — 3 panels, 3 y-axes (1950–2050)",
+    x = "Year",
+    y = NULL,
+    caption = "Source: Soued et al. (2022) Nature Geoscience"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.placement = "outside",
+    strip.text = element_text(face = "bold", size = 12, hjust = 0),
+    panel.grid.minor = element_blank(),
+    plot.caption = element_text(size = 10, color = "gray50")
+  )
+```

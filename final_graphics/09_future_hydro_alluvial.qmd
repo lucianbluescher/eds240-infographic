@@ -1,0 +1,149 @@
+---
+title: "Future Hydropower Pipeline — Alluvial"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 8
+    fig-height: 6
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 8, fig.height = 6, dpi = 150)
+library(tidyverse)
+library(here)
+library(ggalluvial)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+# Future hydropower dams (FHReD, Zarfl et al. 2015)
+future <- readxl::read_xlsx(
+  here("data/FHReD_2015_future_dams_Zarfl_et_al_beta_version/FHReD_2015_future_dams_Zarfl_et_al_beta_version.xlsx"),
+  sheet = 1
+)
+
+pal <- c(
+  carbon_black = "#222222",
+  white        = "#ffffff",
+  baltic_blue  = "#1c5d99",
+  pacific_blue = "#639fab",
+  powder_blue  = "#bbcde5"
+)
+
+# Keep top groups by MW (not by row count), then build alluvial table
+continent_mw <- future %>%
+  filter(!is.na(`Capacity (MW)`), !is.na(Continent)) %>%
+  group_by(Continent) %>%
+  summarise(mw = sum(`Capacity (MW)`, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mw))
+
+top_continents <- continent_mw %>% slice_head(n = 5) %>% pull(Continent)
+
+basin_mw <- future %>%
+  filter(!is.na(`Capacity (MW)`), !is.na(`Major Basin`)) %>%
+  group_by(`Major Basin`) %>%
+  summarise(mw = sum(`Capacity (MW)`, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mw))
+
+top_basins <- basin_mw %>% slice_head(n = 5) %>% pull(`Major Basin`)
+
+future_alluvial <- future %>%
+  filter(!is.na(`Capacity (MW)`)) %>%
+  mutate(
+    continent  = if_else(Continent %in% top_continents, Continent, "Other"),
+    basin_group = if_else(`Major Basin` %in% top_basins, `Major Basin`, "Other basins")
+  ) %>%
+  # Size classes for installed capacity (3 buckets to reduce clutter)
+  mutate(
+    size_class = cut(
+      `Capacity (MW)`,
+      breaks = c(-Inf, 100, 500, Inf),
+      labels = c("<100 MW", "100–500 MW", ">500 MW"),
+      right = FALSE
+    )
+  ) %>%
+  # Summarise flows: one row per combination of axes
+  group_by(continent, basin_group, size_class) %>%
+  summarise(
+    mw_total = sum(`Capacity (MW)`, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(mw_total > 0)
+```
+
+```{r plot_vertical_alluvial}
+#| warning: false
+#| message: false
+# Vertical alluvial, weighted by MW
+
+ggplot(
+  future_alluvial,
+  aes(
+    axis1 = size_class,
+    axis2 = basin_group,
+    axis3 = continent,
+    y     = mw_total
+  )
+) +
+  geom_alluvium(
+    aes(fill = size_class),
+    alpha = 0.9,
+    knot.pos = 0.45,
+    color = NA
+  ) +
+  # Invisible strata just to anchor labels (no boxes)
+  geom_stratum(fill = NA, color = NA, width = 0.25) +
+  geom_text(
+    stat = "stratum",
+    aes(label = stringr::str_wrap(after_stat(stratum), width = 14)),
+    size = 2.8,
+    lineheight = 0.9,
+    color = pal["carbon_black"],
+    check_overlap = TRUE
+  ) +
+  scale_fill_manual(
+    values = c(
+      "<100 MW"    = pal["powder_blue"],
+      "100–500 MW" = pal["pacific_blue"],
+      ">500 MW"    = pal["baltic_blue"]
+    )
+  ) +
+  scale_x_discrete(
+    limits = c("Size", "Basin", "Region"),
+    expand = c(0.04, 0.04)
+  ) +
+  labs(
+    title    = "Future hydropower pipeline",
+    subtitle = "Width = capacity (MW). Flows show how projects distribute by dam size, river basin, and region.",
+    x        = NULL,
+    y        = "Capacity (MW)",
+    fill     = "Dam size"
+  ) +
+  coord_flip() +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank(),
+    plot.title   = element_text(face = "bold"),
+    plot.subtitle = element_text(size = 9, color = "gray40"),
+    plot.margin = margin(6, 6, 6, 6),
+    legend.position = "right"
+  )
+```
+
+**Takeaway:** The global hydropower pipeline is heavily concentrated in a limited set of continents and river basins, and a large share of new capacity comes from very large and mega-projects. Because these projects will lock in infrastructure and emissions for decades, careful siting and design are critical for keeping future hydropower truly low-carbon.
+
+**Data:** FHReD (Future Hydropower Reservoirs and Dams; Zarfl et al. 2015). Each ribbon is weighted by installed capacity (MW) from FHReD. Categories are derived from project stage, continent, major basin, and capacity class.
+

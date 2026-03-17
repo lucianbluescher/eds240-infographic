@@ -216,19 +216,23 @@ viz2_data <- generation %>%
     ) %>%
     ungroup()
 
+# Calculate max value for better scaling
+max_indexed <- max(viz2_data$Indexed_Value, na.rm = TRUE)
+y_max <- ceiling(max_indexed / 500) * 500  # Round up to nearest 500
+
 viz2 <- ggplot(viz2_data, aes(x = Year, y = Indexed_Value, color = Source, linetype = Source_Type)) +
-    geom_line(size = 2, alpha = 0.85) +
-    geom_point(size = 4.5, alpha = 0.9) +
-    geom_hline(yintercept = 200, linetype = "dashed", color = "#A23B72", alpha = 0.4, size = 0.8) +
-    geom_hline(yintercept = 100, linetype = "dashed", color = "#666666", alpha = 0.3, size = 0.5) +
-    geom_hline(yintercept = 0, linetype = "solid", color = "#C73E1D", alpha = 0.5, size = 1) +
+    geom_line(size = 2.5, alpha = 1) +
+    geom_point(size = 5.5, alpha = 1, stroke = 1.5) +
+    geom_hline(yintercept = 200, linetype = "dashed", color = "#A23B72", alpha = 0.5, size = 1) +
+    geom_hline(yintercept = 100, linetype = "dashed", color = "#666666", alpha = 0.4, size = 0.8) +
+    geom_hline(yintercept = 0, linetype = "solid", color = "#C73E1D", alpha = 0.6, size = 1.2) +
     annotate(
         "text",
         x = 2045,
         y = 200,
         label = "2× (Doubling)",
         color = "#A23B72",
-        size = 3.5,
+        size = 4,
         fontface = "bold"
     ) +
     annotate(
@@ -237,26 +241,26 @@ viz2 <- ggplot(viz2_data, aes(x = Year, y = Indexed_Value, color = Source, linet
         y = 100,
         label = "Baseline (2019)",
         color = "#666666",
-        size = 3,
+        size = 3.5,
         fontface = "italic"
     ) +
     annotate(
         "text",
         x = 2045,
-        y = 5,
+        y = 10,
         label = "Zero",
         color = "#C73E1D",
-        size = 3.5,
+        size = 4,
         fontface = "bold"
     ) +
-    coord_polar(theta = "x", start = -pi/2, direction = 1) +
+    coord_polar(theta = "x", start = -pi/2, direction = 1, clip = "off") +
     scale_color_manual(
         values = c(
-            "Hydropower" = "#2E86AB",
-            "Solar PV" = "#F18F01",
-            "Wind" = "#C73E1D",
-            "Nuclear" = "#6A4C93",
-            "Fossil_Fuels" = "#8B4513"
+            "Hydropower" = "#0066CC",      # Brighter blue
+            "Solar PV" = "#FF6600",         # Bright orange
+            "Wind" = "#CC0000",             # Bright red
+            "Nuclear" = "#9933FF",          # Bright purple
+            "Fossil_Fuels" = "#8B4513"      # Brown (kept for contrast)
         ),
         labels = c("Hydropower", "Solar PV", "Wind", "Nuclear", "Fossil Fuels")
     ) +
@@ -264,24 +268,31 @@ viz2 <- ggplot(viz2_data, aes(x = Year, y = Indexed_Value, color = Source, linet
         values = c("Renewables" = "solid", "Nuclear" = "solid", "Fossil Fuels" = "dashed"),
         guide = "none"
     ) +
-    scale_x_continuous(breaks = c(2019, 2030, 2040, 2050)) +
-    scale_y_continuous(limits = c(0, max(viz2_data$Indexed_Value) * 1.1)) +
+    scale_x_continuous(breaks = c(2019, 2030, 2040, 2050), expand = expansion(mult = 0.1)) +
+    scale_y_continuous(
+        limits = c(0, y_max),
+        breaks = seq(0, y_max, by = 500),
+        expand = expansion(mult = c(0, 0.15))
+    ) +
     labs(
         title = "Energy Transition Spiral: Renewables Rise, Fossils Fall",
         subtitle = "Indexed to 2019 (100 = baseline). Hydropower doubles while Solar/Wind surge 10-15×. Fossil fuels collapse to near-zero.",
         color = "Energy Source",
         caption = "Source: IEA Net Zero by 2050 Scenario"
     ) +
-    theme_minimal(base_size = 13) +
+    theme_minimal(base_size = 14) +
     theme(
-        plot.title = element_text(size = 17, face = "bold", hjust = 0.5),
-        plot.subtitle = element_text(size = 11, hjust = 0.5, margin = margin(b = 15)),
+        plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 12, hjust = 0.5, margin = margin(b = 20)),
         legend.position = "bottom",
         legend.box = "horizontal",
-        panel.grid.major = element_line(color = "#E0E0E0", linetype = "dashed"),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 13, face = "bold"),
+        panel.grid.major = element_line(color = "#D0D0D0", linetype = "dashed", size = 0.5),
         panel.grid.minor = element_blank(),
-        axis.text.y = element_text(size = 9),
-        plot.caption = element_text(size = 9, color = "#999999")
+        axis.text.y = element_text(size = 10),
+        plot.caption = element_text(size = 10, color = "#999999"),
+        plot.margin = margin(20, 20, 20, 20)
     )
 
 # ============================================================================

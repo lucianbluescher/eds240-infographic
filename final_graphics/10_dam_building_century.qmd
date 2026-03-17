@@ -1,0 +1,74 @@
+---
+title: "Dam Building Century"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 8
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 8, fig.height = 5, dpi = 150)
+library(tidyverse)
+library(readxl)
+library(here)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+raw <- read_xlsx(here("data/moesm.xlsx"), sheet = 1)
+
+river <- raw %>%
+  select(year = Year, n = Cum_reservoir_n, area_km2 = Cumulative_reservoir_area) %>%
+  filter(year >= 1900, year <= 2060)
+
+# Milestone dams (largest in GRanD / historical icons)
+milestones <- tibble(
+  year = c(1936, 1942, 1964, 1970, 1984, 2006, 2016),
+  dam = c("Hoover", "Grand Coulee", "Glen Canyon", "Aswan", "Itaipu", "Three Gorges", "Belo Monte"),
+  label = c("Hoover\n1936", "Grand Coulee\n1942", "Glen Canyon\n1964", "Aswan\n1970", "Itaipu\n1984", "Three Gorges\n2006", "Belo Monte\n2016")
+)
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+# River of time: cumulative reservoir count as flowing ribbon
+ggplot(river, aes(x = year, y = n)) +
+  geom_ribbon(aes(ymin = 0, ymax = n), fill = "#1c5d99", alpha = 0.6) +
+  geom_line(color = "#1c5d99", linewidth = 1.2) +
+  geom_vline(data = milestones, aes(xintercept = year), linetype = "dashed", color = "gray50", alpha = 0.7) +
+  geom_point(data = river %>% filter(year %in% milestones$year),
+             aes(x = year, y = n), size = 4, shape = 21, fill = "#ffffff", color = "#1c5d99", stroke = 1.5) +
+  geom_text(data = milestones, aes(x = year, y = max(river$n) * 0.92, label = label),
+            size = 2, vjust = 1, color = "gray30") +
+  annotate("text", x = 1987, y = max(river$n) * 0.1, label = "Peak emissions ~1987", size = 3, color = "gray40", fontface = "italic") +
+  annotate("text", x = 2015, y = max(river$n) * 0.15, label = "Paris 2015", size = 3, color = "gray40", fontface = "italic") +
+  scale_x_continuous(limits = c(1895, 2065), breaks = seq(1900, 2060, 20)) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "The dam-building century",
+    subtitle = "Cumulative reservoir count (1900–2060). Milestones: Hoover, Aswan, Itaipu, Three Gorges.",
+    x = "Year", y = "Cumulative reservoirs",
+    caption = "Source: Soued et al. (2022) Nature Geoscience"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.caption = element_text(size = 9, color = "gray50")
+  )
+```
+
+**Takeaway:** Reservoir construction accelerated from the mid-20th century; cumulative count grows even as emissions peak. Iconic dams mark the timeline.
+
+**Data:** Soued et al. moesm.xlsx — Cum_reservoir_n, Cumulative_reservoir_area by year. Milestone dams from GRanD / historical records.

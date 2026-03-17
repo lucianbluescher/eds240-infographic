@@ -1,0 +1,141 @@
+---
+title: "Good vs Bad CI"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 6
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 6, fig.height = 5, dpi = 150)
+library(tidyverse)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+library(patchwork)
+
+# Li & He (2022) Table S3
+depth_ci <- tribble(
+  ~class,                  ~ci,
+  "Shallow (<20 m)",       124.5,
+  "Medium (20–100 m)",      66.0,
+  "Deep (>100 m)",          27.7
+)
+
+trophic_ci <- tribble(
+  ~class,            ~ci,
+  "Oligotrophic",     55.6,
+  "Mesotrophic",      69.1,
+  "Eutrophic",       116.7
+)
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+p1 <- ggplot(depth_ci, aes(x = fct_reorder(class, ci), y = ci)) +
+  geom_col(fill = "#1c5d99", width = 0.6, alpha = 0.85) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#222222", linewidth = 0.8) +
+  coord_flip() +
+  labs(subtitle = "Water depth", x = NULL, y = "kg CO₂e/MWh") +
+  theme_minimal(base_size = 10) +
+  theme(panel.grid.major.y = element_blank())
+
+p2 <- ggplot(trophic_ci, aes(x = fct_reorder(class, ci), y = ci)) +
+  geom_col(fill = "#639fab", width = 0.6, alpha = 0.85) +
+  geom_hline(yintercept = 80, linetype = "dashed", color = "#222222", linewidth = 0.8) +
+  coord_flip() +
+  labs(subtitle = "Trophic level (nutrients)", x = NULL, y = "kg CO₂e/MWh") +
+  theme_minimal(base_size = 10) +
+  theme(panel.grid.major.y = element_blank())
+
+(p1 | p2) +
+  plot_annotation(
+    title = "Planning matters: depth & trophic",
+    subtitle = "Dotted red line = 80 kg CO₂e/MWh (low-carbon target). Bars above = fail target.",
+    caption = "Source: Li & He (2022) | CI = carbon intensity (emissions per MWh generated)"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    plot.subtitle = element_text(size = 9, color = "gray40"),
+    plot.caption = element_text(size = 8, color = "gray50")
+  )
+```
+
+```{r plot_grid}
+#| warning: false
+#| message: false
+# Simple CI “risk strips” for depth and trophic level
+
+depth_heat <- depth_ci %>%
+  mutate(
+    depth_simple = case_when(
+      str_detect(class, "Shallow") ~ "Shallow",
+      str_detect(class, "Medium")  ~ "Medium",
+      str_detect(class, "Deep")    ~ "Deep",
+      TRUE ~ class
+    )
+  ) %>%
+  ggplot(aes(x = depth_simple, y = 1, fill = ci)) +
+  geom_tile(color = "white", linewidth = 0.7) +
+  geom_text(aes(label = round(ci)), color = "white", fontface = "bold") +
+  scale_fill_gradient2(
+    low = "#1c5d99", mid = "#bbcde5", high = "#b8552e",
+    midpoint = 80,
+    name = "Median CI\n(kg CO₂e/MWh)"
+  ) +
+  labs(
+    title = "By depth",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+trophic_heat <- trophic_ci %>%
+  ggplot(aes(x = class, y = 1, fill = ci)) +
+  geom_tile(color = "white", linewidth = 0.7) +
+  geom_text(aes(label = round(ci)), color = "white", fontface = "bold") +
+  scale_fill_gradient2(
+    low = "#1c5d99", mid = "#bbcde5", high = "#b8552e",
+    midpoint = 80,
+    name = "Median CI\n(kg CO₂e/MWh)"
+  ) +
+  labs(
+    title = "By nutrient level (trophic)",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks = element_blank(),
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+depth_heat / trophic_heat +
+  plot_annotation(
+    title = "Which reservoirs are high‑carbon?",
+    subtitle = "Li & He (2022): shallow and eutrophic classes cluster above the 80 kg CO₂e/MWh low‑carbon target."
+  )
+```
+
+**Takeaway:** Shallow reservoirs (&lt;20 m) and eutrophic (nutrient-rich) reservoirs have much higher carbon intensity than deep or oligotrophic ones. Siting and management matter: planning for depth and water quality can keep hydropower low-carbon.
+
+**Data:** Li & He (2022) — median carbon intensity (CI) by depth class and trophic level from supplementary Table S3. **CI = carbon intensity**: kg of CO₂-equivalent emissions per MWh of electricity generated. The **dotted red line (80 kg CO₂e/MWh)** is the UN 2030 Agenda low-carbon threshold; reservoirs above it are not considered “low-carbon.” Trophic = nutrient level (oligo = low, eutrophic = high).

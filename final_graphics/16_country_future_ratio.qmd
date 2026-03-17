@@ -1,0 +1,146 @@
+---
+title: "Where Are Future Hydropower Dams Planned?"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 9
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 9, fig.height = 5, dpi = 150)
+library(tidyverse)
+library(sf)
+library(readxl)
+library(here)
+library(scales)
+library(rnaturalearth)
+library(rnaturalearthdata)
+```
+
+```{r load-grand}
+#| warning: false
+#| message: false
+# Existing hydropower reservoirs — GRanD v1.3
+grand_path <- here("data/GRanD_Version_1_3/GRanD_dams_v1_3.shp")
+grand_raw <- st_read(grand_path, quiet = TRUE)
+
+# Filter to dams with hydropower as a use
+# (MAIN_USE == "Hydroelectricity" or electricity listed in USE_ELEC)
+grand_hydro <- grand_raw %>%
+  st_drop_geometry() %>%
+  filter(
+    MAIN_USE == "Hydroelectricity" |
+      str_detect(coalesce(USE_ELEC, ""), "Main|Sec")
+  )
+
+existing_country <- grand_hydro %>%
+  group_by(country = COUNTRY) %>%
+  summarise(
+    existing_dams = n(),
+    existing_storage_mcm = sum(replace_na(CAP_MCM, 0)),  # reservoir volume, not power
+    .groups = "drop"
+  )
+```
+
+```{r load-fhred}
+#| warning: false
+#| message: false
+# Future hydropower dams — FHReD (same sheet as other FHReD graphics)
+fhred <- read_xlsx(
+  here("data/FHReD_2015_future_dams_Zarfl_et_al_beta_version/FHReD_2015_future_dams_Zarfl_et_al_beta_version.xlsx"),
+  sheet = "Future_dams_beta"
+)
+
+future_country <- fhred %>%
+  filter(!is.na(`Capacity (MW)`), !is.na(Country)) %>%
+  group_by(country = Country) %>%
+  summarise(
+    future_dams = n(),
+    future_mw   = sum(`Capacity (MW)`, na.rm = TRUE),
+    .groups     = "drop"
+  )
+```
+
+```{r combine}
+#| warning: false
+#| message: false
+country_hydro <- full_join(existing_country, future_country, by = "country") %>%
+  mutate(
+    existing_dams = replace_na(existing_dams, 0L),
+    future_dams   = replace_na(future_dams, 0L),
+    future_mw     = replace_na(future_mw, 0)
+  )
+
+# Harmonize country names for join with rnaturalearth
+country_hydro_clean <- country_hydro %>%
+  mutate(
+    country_join = case_when(
+      # FHReD-specific mismatches
+      country == "Bosnia and Herzegovina"   ~ "Bosnia and Herz.",
+      country == "Central African Republic" ~ "Central African Rep.",
+      country == "Congo, Rep."             ~ "Congo",
+      country == "Egypt, Arab Rep."        ~ "Egypt",
+      country == "Korea, Dem. Rep."        ~ "North Korea",
+      country == "Lao PDR"                 ~ "Laos",
+      country == "Macedonia"               ~ "North Macedonia",
+      country == "United States"           ~ "United States of America",
+      # GRanD-specific mismatches
+      country == "Congo (DRC)"             ~ "Dem. Rep. Congo",
+      country == "Czech Republic"          ~ "Czechia",
+      country == "Dominican Republic"      ~ "Dominican Rep.",
+      country == "French Guiana"           ~ "France",
+      country == "Ivory Coast"             ~ "Côte d'Ivoire",
+      country == "Myanmar (Burma)"         ~ "Myanmar",
+      country == "Swaziland"               ~ "eSwatini",
+      TRUE ~ country
+    )
+  )
+```
+
+```{r map-data}
+#| warning: false
+#| message: false
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Join by country name (after harmonization)
+map_data <- world %>%
+  left_join(country_hydro_clean, by = c("name" = "country_join"))
+```
+
+```{r map}
+#| warning: false
+#| message: false
+ggplot(map_data) +
+  geom_sf(aes(fill = future_dams)) +
+  scale_fill_viridis_c(
+    trans = "sqrt",
+    na.value = "grey95",
+    name = "Future hydropower\ndams (count)"
+  ) +
+  labs(
+    title = "Where are future hydropower dams planned?",
+    subtitle = "Country-level count of planned hydropower dams (FHReD).",
+    caption = "Future dams: FHReD (Zarfl et al. 2015). Existing dams (GRanD v1.3) provide context for current fleets."
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.grid = element_blank(),
+    legend.position = "right",
+    plot.title = element_text(face = "bold")
+  )
+```
+
+**Takeaway:** Some countries have very large pipelines of planned hydropower dams, while others have few or none. This map highlights where **future hydropower development is most concentrated** in terms of the number of projects.
+
+**Data:** Future hydropower dams from FHReD (Zarfl et al. 2015), aggregated by country. This map uses the **number of dams** (not generation). Existing hydropower fleets from GRanD v1.3 are used only for context elsewhere.
+

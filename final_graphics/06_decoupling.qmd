@@ -1,0 +1,81 @@
+---
+title: "Decoupling"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 6
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 6, fig.height = 5, dpi = 150)
+library(tidyverse)
+library(readxl)
+library(here)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+raw_ts <- read_xlsx(here("data/moesm.xlsx"), sheet = 1)
+
+totals <- raw_ts %>%
+  transmute(
+    year = Year,
+    tmol_c = CO2_diff + CH4_diff + CH4_bub + CH4_deg,
+    rf_mw = RF_tot_rcp6
+  ) %>%
+  mutate(
+    tmol_norm = tmol_c / max(tmol_c, na.rm = TRUE),
+    rf_norm = rf_mw / max(rf_mw, na.rm = TRUE)
+  ) %>%
+  pivot_longer(c(tmol_norm, rf_norm), names_to = "metric", values_to = "value") %>%
+  mutate(metric = recode(metric,
+    "tmol_norm" = "Carbon emissions (peaked ~1987)",
+    "rf_norm" = "Radiative forcing (keeps rising)"
+  ))
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+ggplot(totals, aes(x = year, y = value, color = metric)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 1.5, alpha = 0.7) +
+  scale_y_continuous(
+    name = "Indexed to max (0–1)",
+    limits = c(0, 1.05),
+    labels = scales::percent_format(scale = 100)
+  ) +
+  scale_color_manual(
+    values = c("Carbon emissions (peaked ~1987)" = "#1c5d99", "Radiative forcing (keeps rising)" = "#639fab"),
+    guide = guide_legend(title = NULL)
+  ) +
+  labs(
+    title = "Emissions peaked, radiative forcing did not",
+    subtitle = "Both indexed to their max. Emissions fall; RF rises because CH4 lingers in the atmosphere.",
+    x = "Year",
+    caption = "Source: Soued et al. (2022) Nature Geoscience"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.caption = element_text(size = 9, color = "gray50")
+  )
+```
+
+**Takeaway:** Reservoir carbon emissions peaked around 1987 and have declined, but radiative forcing (the actual warming effect) keeps rising. Methane has a shorter lifetime than CO2 but a much stronger warming effect per molecule, so past methane keeps adding to warming.
+
+**Data:** Soued et al. (2022) Nature Geoscience, moesm.xlsx. Total reservoir carbon emissions (Tmol/yr) and radiative forcing (mW/m²). Both indexed to their max (0–1) so they overlay on the same axis.
+
+**Key terms:** Radiative forcing (RF) = how much extra heat the atmosphere traps due to a gas (measured in mW/m²). Emissions peaked; RF did not because methane lingers in the atmosphere and adds to warming over time.

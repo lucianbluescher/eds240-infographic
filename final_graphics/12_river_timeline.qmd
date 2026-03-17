@@ -1,0 +1,265 @@
+---
+title: "River Timeline: 100 Years Toward Net Zero (1950–2050)"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 10
+    fig-height: 12
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 10, fig.height = 12, dpi = 150)
+library(tidyverse)
+library(readxl)
+library(readr)
+library(here)
+library(patchwork)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+# Soued: emissions, RF, reservoir count, area (1900–2060)
+soued <- read_xlsx(here("data/moesm.xlsx"), sheet = 1) %>%
+  filter(Year >= 1950, Year <= 2050) %>%
+  transmute(
+    year = Year,
+    tmol_c = CO2_diff + CH4_diff + CH4_bub + CH4_deg,
+    rf = RF_tot_rcp6,
+    n_reservoirs = Cum_reservoir_n,
+    area_105 = Cumulative_reservoir_area / 1e5
+  )
+
+# IEA NZE: hydro capacity, TWh (2019–2050)
+nze <- read_csv(here("data/NZE2021_AnnexA.csv"), show_col_types = FALSE)
+nze_hydro <- nze %>%
+  filter(Product == "Hydro", Flow == "Electricity generation", Unit == "TWh", Year >= 2019) %>%
+  select(year = Year, hydro_twh = Value)
+nze_cap <- nze %>%
+  filter(Product == "Hydro", Flow == "Installed total power capacity", Unit == "GW", Year >= 2019) %>%
+  select(year = Year, hydro_gw = Value)
+
+# OWID: global hydro generation (1965–2025), hydro share (1985–2025)
+hydro_gen <- read_csv(here("data/hydropower-generation/hydropower-generation.csv"), show_col_types = FALSE) %>%
+  filter(Entity == "World", Year >= 1950, Year <= 2025) %>%
+  select(year = Year, hydro_twh = Hydropower)
+hydro_share <- read_csv(here("data/share-electricity-hydro/share-electricity-hydro.csv"), show_col_types = FALSE) %>%
+  filter(Entity == "World", Year >= 1950, Year <= 2025) %>%
+  select(year = Year, hydro_pct = Hydropower)
+
+# Big dams (GRanD icons)
+big_dams <- tibble(
+  year = c(1959, 1967, 1970, 1984, 2006, 2016),
+  dam = c("Glen Canyon", "Grand Coulee", "Aswan", "Itaipu", "Three Gorges", "Belo Monte")
+)
+```
+
+**Data (all four):** Soued et al. — total reservoir surface area (in units of 100,000 km²), 1950–2050. The amount of water surface from dams worldwide grows as more dams are built.
+
+---
+
+## River style A: Ribbon (flowing band)
+
+**Y-axis:** Reservoir area (100,000 km²) — total water surface from dams worldwide.
+
+```{r variant-a}
+#| warning: false
+#| message: false
+river <- soued %>% select(year, y = area_105)
+ggplot(river, aes(x = year, y = y)) +
+  geom_ribbon(aes(ymin = 0, ymax = y), fill = "#1c5d99", alpha = 0.6) +
+  geom_line(color = "#1c5d99", linewidth = 1.2) +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(
+    title = "A: Ribbon",
+    subtitle = "Reservoir area (100,000 km²) — global water surface from dams, 1950–2050",
+    x = "Year", y = "Reservoir area (100,000 km²)"
+  ) +
+  theme_minimal() + theme(panel.grid.minor = element_blank())
+```
+
+### Style A — minimal (no axis labels, titles, subtitles; grid lines kept)
+
+```{r variant-a-minimal}
+#| warning: false
+#| message: false
+river <- soued %>% select(year, y = area_105)
+ggplot(river, aes(x = year, y = y)) +
+  geom_ribbon(aes(ymin = 0, ymax = y), fill = "#1c5d99", alpha = 0.6) +
+  geom_line(color = "#1c5d99", linewidth = 1.2) +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(x = NULL, y = NULL, title = NULL, subtitle = NULL) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    plot.title = element_blank(),
+    plot.subtitle = element_blank(),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+## Sytle A: Time on Y axis
+```{r}
+#| warning: false
+#| message: false
+ggplot(river, aes(x = year, y = y)) +
+  geom_ribbon(aes(ymin = 0, ymax = y), fill = "#1c5d99", alpha = 0.6) +
+  geom_line(color = "#1c5d99", linewidth = 1.2) +
+  scale_x_continuous(limits = c(2050, 1950)) +
+  coord_flip() +
+  labs(x = NULL, y = NULL, title = NULL, subtitle = NULL) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_text(),   # show year labels on y
+    axis.title = element_blank(),
+    plot.title = element_blank(),
+    plot.subtitle = element_blank(),
+    panel.grid.major = element_line(color = "gray90"),
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+
+
+## River style B: Curved (smoothed path)
+
+```{r variant-b}
+#| warning: false
+#| message: false
+river <- soued %>% select(year, y = area_105)
+ggplot(river, aes(x = year, y = y)) +
+  geom_smooth(method = "loess", span = 0.4, se = TRUE, fill = "#1c5d99", alpha = 0.5, color = "#1c5d99", linewidth = 1.2) +
+  geom_line(aes(y = y), color = "gray40", linewidth = 0.5, alpha = 0.5) +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(
+    title = "B: Curved",
+    subtitle = "Same data, smoothed — reservoir area with trend band",
+    x = "Year", y = "Reservoir area (100,000 km²)"
+  ) +
+  theme_minimal() + theme(panel.grid.minor = element_blank())
+```
+
+## River style C: Stepped (blocky river)
+
+```{r variant-c}
+#| warning: false
+#| message: false
+river <- soued %>% select(year, y = area_105)
+step_bars <- river %>%
+  mutate(xmax = lead(year, default = max(year) + 1))
+ggplot(step_bars, aes(xmin = year, xmax = xmax, ymin = 0, ymax = y)) +
+  geom_rect(fill = "#1c5d99", alpha = 0.5, color = "#1c5d99", linewidth = 0.3) +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(
+    title = "C: Stepped",
+    subtitle = "Blocky steps — yearly growth in total reservoir surface area",
+    x = "Year", y = "Reservoir area (100,000 km²)"
+  ) +
+  theme_minimal() + theme(panel.grid.minor = element_blank())
+```
+
+## River style D: Wavy (sinusoidal perturbation)
+
+```{r variant-d}
+#| warning: false
+#| message: false
+river <- soued %>%
+  select(year, y_raw = area_105) %>%
+  mutate(y = y_raw * (1 + 0.08 * sin((year - 1950) / 8)))
+ggplot(river, aes(x = year, y = y)) +
+  geom_ribbon(aes(ymin = min(y) * 0.5, ymax = y), fill = "#1c5d99", alpha = 0.5) +
+  geom_line(color = "#1c5d99", linewidth = 1.2) +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(
+    title = "D: Wavy",
+    subtitle = "Stylized wavy river — same reservoir area data, decorative banks",
+    x = "Year", y = NULL
+  ) +
+  theme_minimal() + theme(panel.grid.minor = element_blank())
+```
+
+## Combined river with branches
+
+One main river (reservoir area) with tributary branches: hydro TWh, emissions, hydro share, dam milestones.
+
+```{r combined}
+#| warning: false
+#| message: false
+# Main river
+p_main <- ggplot(soued, aes(x = year, y = area_105)) +
+  geom_ribbon(aes(ymin = 0, ymax = area_105), fill = "#1c5d99", alpha = 0.6) +
+  geom_line(color = "#1c5d99", linewidth = 1.2) +
+  geom_vline(data = big_dams, aes(xintercept = year), linetype = "dashed", color = "gray50", alpha = 0.6) +
+  geom_text(data = big_dams, aes(x = year, y = max(soued$area_105) * 0.95, label = paste0(dam, "\n", year)),
+            size = 2.5, vjust = 0, color = "gray30") +
+  annotate("text", x = 1987, y = max(soued$area_105) * 0.2, label = "Peak emissions 1987", size = 2.8, color = "gray40", fontface = "italic") +
+  annotate("text", x = 2015, y = max(soued$area_105) * 0.25, label = "Paris 2015", size = 2.8, color = "gray40", fontface = "italic") +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(title = "Main river: Reservoir area", x = NULL, y = "Reservoir area (100,000 km²)") +
+  theme_minimal(base_size = 10) + theme(panel.grid.minor = element_blank())
+
+# Branch 1: Hydro TWh (historical OWID + IEA NZE projection)
+hydro_ts <- hydro_gen %>%
+  filter(year <= 2018) %>%
+  bind_rows(nze_hydro %>% filter(year >= 2019))
+p_hydro <- ggplot(hydro_ts, aes(x = year, y = hydro_twh)) +
+  geom_area(fill = "#639fab", alpha = 0.6) +
+  geom_line(color = "#1c5d99", linewidth = 0.8) +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(title = "Branch: Hydro generation (TWh)", x = NULL, y = "TWh") +
+  theme_minimal(base_size = 9) + theme(panel.grid.minor = element_blank())
+
+# Branch 2: Reservoir emissions
+p_em <- ggplot(soued, aes(x = year, y = tmol_c)) +
+  geom_ribbon(aes(ymin = 0, ymax = tmol_c), fill = "#639fab", alpha = 0.5) +
+  geom_line(color = "#1c5d99", linewidth = 0.8) +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(title = "Branch: Reservoir C emissions", x = NULL, y = "Tmol C/yr") +
+  theme_minimal(base_size = 9) + theme(panel.grid.minor = element_blank())
+
+# Branch 3: Hydro share (OWID + IEA proxy)
+share_ts <- hydro_share %>% filter(year <= 2018)
+nze_share <- nze %>%
+  filter(Flow == "Electricity generation", Unit == "TWh",
+         Product %in% c("Hydro", "Renewables")) %>%
+  select(Product, year = Year, Value) %>%
+  pivot_wider(names_from = Product, values_from = Value) %>%
+  mutate(hydro_pct = 100 * Hydro / Renewables) %>%
+  select(year, hydro_pct) %>%
+  filter(year >= 2019)
+share_ts <- bind_rows(share_ts, nze_share)
+p_share <- ggplot(share_ts, aes(x = year, y = hydro_pct)) +
+  geom_line(color = "#bbcde5", linewidth = 0.8) +
+  geom_point(size = 1, color = "#bbcde5") +
+  scale_x_continuous(limits = c(1950, 2050)) +
+  labs(title = "Branch: Hydro % of renewables", x = NULL, y = "%") +
+  theme_minimal(base_size = 9) + theme(panel.grid.minor = element_blank())
+
+# Assemble
+(p_main / p_hydro / p_em / p_share) +
+  plot_annotation(
+    title = "100-year river toward net zero (1950–2050)",
+    subtitle = "Main river = total reservoir surface area. Branches = hydro output, emissions, hydro share. Dashed lines = major dams.",
+    theme = theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 10, color = "gray40")
+    )
+  )
+```
+
+**Takeaway:** One timeline (1950–2050) anchors the story; branches show hydro growth, emissions decline, and hydro's shrinking share. Big dams mark the century.
+
+**Data:** Soued (moesm.xlsx), IEA NZE (NZE2021_AnnexA), OWID (hydropower-generation, share-electricity-hydro). Big dams from GRanD / historical records.

@@ -1,0 +1,71 @@
+---
+title: "Peak to Net Zero"
+format:
+  html:
+    self-contained: true
+  pdf:
+    fig-width: 8
+    fig-height: 5
+execute:
+  echo: false
+  warning: false
+  message: false
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup}
+#| warning: false
+#| message: false
+knitr::opts_chunk$set(fig.width = 8, fig.height = 5, dpi = 150)
+library(tidyverse)
+library(readxl)
+library(here)
+```
+
+```{r load}
+#| warning: false
+#| message: false
+raw <- read_xlsx(here("data/moesm.xlsx"), sheet = 1)
+
+totals <- raw %>%
+  transmute(
+    year = Year,
+    tmol_c = CO2_diff + CH4_diff + CH4_bub + CH4_deg
+  ) %>%
+  filter(year >= 1900, year <= 2060)
+
+milestones <- tibble(
+  year = c(1987, 2015, 2020, 2050),
+  label = c("1987\nPeak emissions", "2015\nParis", "Today", "2050\nNet zero")
+) %>%
+  left_join(totals %>% select(year, tmol_c), by = "year")
+```
+
+```{r plot}
+#| warning: false
+#| message: false
+# River-style: emissions as flowing path toward net zero
+ggplot(totals, aes(x = year, y = tmol_c)) +
+  geom_ribbon(aes(ymin = 0, ymax = tmol_c), fill = "#1c5d99", alpha = 0.5) +
+  geom_line(color = "#1c5d99", linewidth = 1.2) +
+  geom_point(data = milestones, aes(x = year, y = tmol_c), size = 5, shape = 21, fill = "#ffffff", color = "#1c5d99", stroke = 2) +
+  geom_text(data = milestones, aes(x = year, y = tmol_c, label = label),
+            vjust = -0.8, size = 3.2, fontface = "bold", color = "#1c5d99") +
+  scale_x_continuous(limits = c(1895, 2065), breaks = seq(1900, 2060, 20)) +
+  labs(
+    title = "From peak to net zero",
+    subtitle = "Reservoir carbon emissions: peak ~1987, decline toward 2050–2060 targets",
+    x = "Year", y = "Carbon emissions (Tmol C/yr)",
+    caption = "Source: Soued et al. (2022) Nature Geoscience"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.caption = element_text(size = 9, color = "gray50")
+  )
+```
+
+**Takeaway:** Reservoir emissions peaked around 1987 and are projected to fall toward net zero by 2050–2060. Paris 2015 and today anchor the path.
+
+**Data:** Soued et al. moesm.xlsx — total reservoir C emissions (Tmol/yr) by year.

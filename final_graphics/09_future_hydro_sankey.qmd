@@ -1,0 +1,117 @@
+```{r}
+#| warning: false
+#| message: false
+library(tidyverse)
+library(readxl)
+library(networkD3)
+library(here)
+library(htmlwidgets)
+library(htmltools)
+library(webshot2)
+
+# Load FHReD (same sheet as 14)
+future <- read_xlsx(
+  here("data/FHReD_2015_future_dams_Zarfl_et_al_beta_version/FHReD_2015_future_dams_Zarfl_et_al_beta_version.xlsx"),
+  sheet = 2
+)
+
+# ── Wrangle — same basins as 14 panel 02 ───────────────────────────────────────
+
+basin_mw <- future %>%
+  filter(!is.na(`Capacity (MW)`), !is.na(`Major Basin`)) %>%
+  mutate(basin = coalesce(`Major Basin`, "Other")) %>%
+  group_by(basin) %>%
+  summarise(mw = sum(`Capacity (MW)`, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mw))
+
+top_basins <- basin_mw %>% slice_head(n = 6) %>% pull(basin)
+
+basin_tab <- future %>%
+  filter(!is.na(`Capacity (MW)`)) %>%
+  mutate(
+    basin = coalesce(`Major Basin`, "Other"),
+    basin_group = if_else(basin %in% top_basins, basin, "Other basins")
+  ) %>%
+  group_by(basin_group) %>%
+  summarise(mw = sum(`Capacity (MW)`, na.rm = TRUE), .groups = "drop") %>%
+  arrange(desc(mw))
+
+# ── Build nodes & links (add total future full column for long layout) ─────────
+
+trunk_node   <- data.frame(name = "Total future hydropower")
+total_full   <- data.frame(name = "Total future")  # full column
+basin_nodes  <- data.frame(name = unique(basin_tab$basin_group))
+
+nodes <- bind_rows(trunk_node, total_full, basin_nodes)
+nodes$id <- seq_len(nrow(nodes)) - 1
+
+get_id <- function(nm) nodes$id[nodes$name == nm]
+total_mw <- sum(basin_tab$mw)
+
+# Links: trunk → total full column → basins
+links_tier1 <- data.frame(
+  source = get_id("Total future hydropower"),
+  target = get_id("Total future"),
+  value  = total_mw
+)
+links_tier2 <- basin_tab %>%
+  mutate(
+    source = get_id("Total future"),
+    target = map_int(basin_group, get_id),
+    value  = mw
+  ) %>%
+  select(source, target, value)
+
+links <- bind_rows(links_tier1, links_tier2) %>%
+  mutate(across(c(source, target), as.integer))
+
+# ── Plot ───────────────────────────────────────────────────────────────────────
+
+sn <- sankeyNetwork(
+  Links       = as.data.frame(links),
+  Nodes       = as.data.frame(nodes),
+  Source      = "source",
+  Target      = "target",
+  Value       = "value",
+  NodeID      = "name",
+  units       = "MW",
+  fontSize    = 12,
+  nodeWidth   = 25,
+  nodePadding = 15,
+  sinksRight  = TRUE,
+  width       = 1000,  # long layout
+  height      = 400
+)
+
+sn <- htmlwidgets::onRender(sn, '
+  function(el, x) {
+    d3.select(el).selectAll(".node rect")
+      .style("fill", "black")
+      .style("stroke", "none");
+    d3.select(el).selectAll(".node text")
+      .style("font-family", "sans-serif")
+      .style("font-size", "11px");
+    d3.select(el).selectAll(".link")
+      .style("stroke", "#555")
+      .style("stroke-opacity", 0.4);
+  }
+')
+sn
+```
+
+```{r}
+#| warning: false
+#| message: false
+saveWidget(sn, here("hydropower_sankey.html"), selfcontained = TRUE)
+
+webshot2::webshot(
+  here("hydropower_sankey.html"),
+  here("hydropower_sankey.pdf"),
+  vwidth  = 1200,
+  vheight = 500,
+  zoom    = 0.5,
+  delay   = 2,
+  expand  = c(400, 600, 400, 600)  # top, right, bottom, left whitespace in pixels
+)
+```
+
