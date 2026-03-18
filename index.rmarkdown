@@ -752,3 +752,4 @@ After exporting each panel as a PDF from R (see the `ggsave()` calls in the figu
 - **Sun plot context**: The hydropower timing “sun” is a normalized output profile for a specific region/dataset; it supports the timing argument but is not a global inventory of hydro seasonality.
 
 
+

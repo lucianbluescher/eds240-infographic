@@ -19,12 +19,15 @@ editor_options:
 #| message: false
 knitr::opts_chunk$set(fig.width = 6, fig.height = 5, dpi = 150)
 library(tidyverse)
+library(here)
 ```
 
-```{r load}
+```{r}
+#| label: fig-capacity-vs-threshold
 #| warning: false
 #| message: false
-nze <- read_csv(here::here("data/NZE2021_AnnexA.csv"), show_col_types = FALSE)
+# 1. NZE hydropower capacity in 2019 and 2050 (GW → MW)
+nze <- read_csv(here("data/NZE2021_AnnexA.csv"), show_col_types = FALSE)
 
 capacity <- nze %>%
   filter(
@@ -33,35 +36,65 @@ capacity <- nze %>%
     Unit == "GW",
     Year %in% c(2019, 2050)
   ) %>%
-  select(Year, Hydropower = Value) %>%
+  select(Year, Hydro_GW = Value) %>%
+  mutate(Hydro_MW = Hydro_GW * 1000)
+
+# 2. Li & He-style shares above/below 80 kg CO2e/MWh (existing vs future dams)
+shares <- read_csv(here("data/share_failing_80kg.csv"), show_col_types = FALSE)
+
+# 3. Map NZE years → which share to use (existing vs future)
+capacity_split <- capacity %>%
+  mutate(group = if_else(Year == 2019, "Existing dams", "Future dams")) %>%
+  left_join(shares, by = "group") %>%
   mutate(
-    x = c(0.25, 0.75),
-    y = c(0.6, 0.6),
-    size = sqrt(Hydropower) / 1.2  # large bubbles (diameter in mm)
+    frac_above = pct_above_80 / 100,
+    frac_below = pct_below_80 / 100,
+    MW_above   = Hydro_MW * frac_above,
+    MW_below   = Hydro_MW * frac_below
+  ) %>%
+  select(Year, MW_above, MW_below) %>%
+  pivot_longer(
+    cols = starts_with("MW_"),
+    names_to = "segment",
+    values_to = "MW"
+  ) %>%
+  mutate(
+    segment = if_else(segment == "MW_above",
+                      "Above 80 kg CO2e/MWh",
+                      "Below 80 kg CO2e/MWh"),
+    Year = factor(Year)
   )
-```
 
-```{r plot}
-#| warning: false
-#| message: false
-# Two big bubbles: 2019 vs 2050 capacity, one arrow for change
-ggplot(capacity, aes(x = x, y = y, size = size)) +
-  geom_point(shape = 21, fill = "#1c5d99", color = "#222222", stroke = 1.5) +
-  annotate("segment", x = 0.25, xend = 0.75, y = 0.25, yend = 0.25,
-           color = "#222222", linewidth = 1.5,
-           arrow = arrow(length = unit(0.2, "inches"), type = "closed")) +
-  scale_size_identity() +
-  scale_x_continuous(limits = c(0, 1), expand = c(0, 0)) +
-  scale_y_continuous(limits = c(0, 1), expand = c(0, 0)) +
-  theme_void() +
+# 4. Stacked bar: total capacity, split by above/below 80 kg CO2e/MWh
+p_capacity_threshold <- ggplot(capacity_split, aes(x = Year, y = MW, fill = segment)) +
+  geom_col(color = "#222222") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(
+    values = c(
+      "Below 80 kg CO2e/MWh" = "#993404",
+      "Above 80 kg CO2e/MWh" = "#FFCA5C"
+    ),
+    name = NULL
+  ) +
+  labs(
+    x = "Year",
+    y = "Installed hydropower capacity (MW)"
+  ) +
+  theme_minimal(base_size = 11) +
   theme(
-    legend.position = "none",
-    plot.margin = margin(0, 0, 0, 0)
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
   )
+
+p_capacity_threshold
+
+ggsave(
+  filename = here("images", "capacity_vs_threshold.pdf"),
+  plot = p_capacity_threshold,
+  device = cairo_pdf,
+  width = 6,
+  height = 5,
+  units = "in",
+  bg = "transparent"
+)
 ```
-
-**Takeaway:** The IEA Net Zero pathway requires roughly doubling global hydropower capacity by 2050 — from ~1300 GW today to ~2600 GW. Installed capacity is the total power that hydropower plants can produce at full output.
-
-**Data:** IEA Net Zero by 2050 scenario (NZE2021_AnnexA). Installed capacity in GW for Hydro in 2019 and 2050. Bubble size ∝ √capacity.
-
-**Key terms:** GW = gigawatts (1 GW ≈ 1 million kW). Installed capacity = maximum power a plant can produce if running at full output.

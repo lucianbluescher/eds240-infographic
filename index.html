@@ -88,15 +88,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <li><a href="#introduction" id="toc-introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
   <li><a href="#about-the-data" id="toc-about-the-data" class="nav-link" data-scroll-target="#about-the-data">About the Data</a></li>
   <li><a href="#set-up" id="toc-set-up" class="nav-link" data-scroll-target="#set-up">Set up</a></li>
-  <li><a href="#top-10-basins" id="toc-top-10-basins" class="nav-link" data-scroll-target="#top-10-basins">Top 10 Basins</a>
-  <ul class="collapse">
+  <li><a href="#top-10-basins" id="toc-top-10-basins" class="nav-link" data-scroll-target="#top-10-basins">Top 10 Basins</a></li>
   <li><a href="#world-map" id="toc-world-map" class="nav-link" data-scroll-target="#world-map">World Map</a></li>
   <li><a href="#treemap" id="toc-treemap" class="nav-link" data-scroll-target="#treemap">Treemap</a></li>
   <li><a href="#hydropower-sun" id="toc-hydropower-sun" class="nav-link" data-scroll-target="#hydropower-sun">“Hydropower sun”</a></li>
-  <li><a href="#stacked-area-chart" id="toc-stacked-area-chart" class="nav-link" data-scroll-target="#stacked-area-chart">Stacked Area Chart</a></li>
-  <li><a href="#heatmap" id="toc-heatmap" class="nav-link" data-scroll-target="#heatmap">Heatmap</a></li>
-  </ul></li>
-  <li><a href="#design-choices" id="toc-design-choices" class="nav-link" data-scroll-target="#design-choices">3. Design choices</a></li>
+  <li><a href="#capacity-vs-carbon-threshold" id="toc-capacity-vs-carbon-threshold" class="nav-link" data-scroll-target="#capacity-vs-carbon-threshold">Capacity vs carbon threshold</a></li>
+  <li><a href="#design-choices" id="toc-design-choices" class="nav-link" data-scroll-target="#design-choices">Design Choices</a></li>
   </ul>
 </nav>
 </div>
@@ -162,7 +159,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-1-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-1" role="tab" aria-controls="tabset-1-1" aria-selected="true" href="">IEA NZE (scenario)</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-2" role="tab" aria-controls="tabset-1-2" aria-selected="false" href="">FHReD (future dams)</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-3-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-3" role="tab" aria-controls="tabset-1-3" aria-selected="false" href="">BasinATLAS (lev02 basins)</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-1-4-tab" data-bs-toggle="tab" data-bs-target="#tabset-1-4" role="tab" aria-controls="tabset-1-4" aria-selected="false" href="">Li &amp; He (biomes + CI patterns)</a></li></ul>
 <div class="tab-content">
 <div id="tabset-1-1" class="tab-pane active" role="tabpanel" aria-labelledby="tabset-1-1-tab">
-<p>The <strong>IEA Net Zero by 2050 (NZE)</strong> scenario provides the long-run context for my “hydro doubles, share declines” panel (<a href="https://www.iea.org/reports/net-zero-by-2050">IEA report page</a>). I use the <code>NZE2021_AnnexA.csv</code> file (<code>data/NZE2021_AnnexA.csv</code>), filtering <code>Flow == "Electricity generation"</code> and <code>Unit == "TWh"</code> to isolate electricity production by source. From there, I focus on <code>Product</code> values <code>"Hydro"</code>, <code>"Solar PV"</code>, <code>"Wind"</code>, and <code>"Renewables"</code>, with <code>Year</code> and <code>Value</code> giving the time series in TWh. A <code>pivot_wider()</code> step turns this into a wide table where I compute “Other renewables” as a residual (<code>Renewables - Hydro - Solar PV - Wind</code>) and calculate hydropower’s percentage share of total renewables (<code>Hydro / Renewables * 100</code>) for annotation. I do not modify or re-scale the NZE scenario beyond this basic reshaping and arithmetic.</p>
+<p>The <strong>IEA Net Zero by 2050 (NZE)</strong> scenario provides the long-run context for how much hydropower capacity is expected to grow by mid‑century (<a href="https://www.iea.org/reports/net-zero-by-2050">IEA report page</a>). In this project, I use <code>data/NZE2021_AnnexA.csv</code> to extract <strong>installed hydropower capacity</strong> in 2019 and the NZE 2050 target (<code>Flow == "Installed total power capacity"</code>, <code>Unit == "GW"</code>, <code>Product == "Hydro"</code>), then convert to MW for plotting.</p>
 </div>
 <div id="tabset-1-2" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-2-tab">
 <p>The <strong>Future Hydropower Reservoirs and Dams (FHReD)</strong> database is my main source for planned hydropower projects (overview: <a href="https://www.globaldamwatch.org/fhred/">GlobalDamWatch FHReD</a>; associated publication: <a href="https://www.pnas.org/doi/10.1073/pnas.1509007112">Zarfl et al.&nbsp;(2015)</a>). I work from the beta Excel file in this repo (<code>data/FHReD_2015_future_dams_Zarfl_et_al_beta_version/FHReD_2015_future_dams_Zarfl_et_al_beta_version.xlsx</code>, sheet 2), which lists proposed dams with attributes including basin identity, capacity, and coordinates. For this infographic I filter to rows with non-missing <code>Capacity (MW)</code>, <code>LAT_cleaned</code>, and <code>Lon_Cleaned</code>, and I construct a <code>basin</code> variable from <code>Major Basin</code> (falling back to <code>"Other basins"</code> when missing). I then summarize by <code>basin</code> to rank the top 10 “major basins” globally by planned MW (feeding both the palette and the treemap) and use the project coordinates as inputs to a spatial join against basin polygons for mapping.</p>
@@ -171,7 +168,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <p>To move from project points to hydrologic regions, I use <strong>BasinATLAS / HydroBASINS</strong> polygons (see <a href="https://www.hydrosheds.org/products/hydrobasins">HydroSHEDS HydroBASINS product page</a>). In this repo, the level-2 basin geometry is bundled as <code>data/basins_lev02_geom.rds</code>, which contains <code>hybas_id</code> and <code>MULTIPOLYGON</code> geometry in WGS84. I convert FHReD projects to an <code>sf</code> point layer using <code>LAT_cleaned</code> and <code>Lon_Cleaned</code>, repair basin geometries with <code>st_make_valid()</code>, and then run <code>st_join()</code> to attach each dam to the <code>hybas_id</code> that contains it. Summing <code>Capacity (MW)</code> by <code>hybas_id</code> yields a basin-level <code>future_mw</code> field that I map as a grey, square-root–scaled fill; the individual projects remain as colored points keyed to the major-basin palette.</p>
 </div>
 <div id="tabset-1-4" class="tab-pane" role="tabpanel" aria-labelledby="tabset-1-4-tab">
-<p><strong>Li &amp; He (2022)</strong> provides the carbon-intensity patterns I use as a conceptual overlay rather than as a full physical model (<a href="https://doi.org/10.1016/j.rser.2022.112251">paper DOI</a>). Instead of ingesting raw reservoir time series, I hardcode published summary statistics from the supplementary tables into the script. From Table S2, I take median carbon intensities (kg CO₂e/MWh) for four broad biomes—Tundra, Boreal, Temperate, Tropical—and use these to define latitudinal “biome bands” on the map as contextual background. From Table S3, I extract median CI values for three depth classes and three trophic states at the <strong>20-year GWP horizon</strong> and build a 3×3 “scenario grid” index where each cell is <code>CI_depth_20y + CI_trophic_20y</code>. The grid is labeled as an <strong>index constructed from marginal medians</strong>, not an observed joint CI table; its purpose is to make the “highest-risk corner” (shallow + eutrophic) easy to communicate.</p>
+<p><strong>Li &amp; He (2022)</strong> provides the carbon-intensity patterns I use as a conceptual overlay rather than as a full physical model (<a href="https://doi.org/10.1016/j.rser.2022.112251">paper DOI</a>). Instead of ingesting raw reservoir time series, I hardcode published summary statistics from the supplementary tables into the script. From Table S2, I take median carbon intensities (kg CO2e/MWh) for four broad biomes—Tundra, Boreal, Temperate, Tropical—and use these to define latitudinal “biome bands” on the map as contextual background. I also use Li &amp; He’s summary of the share of reservoirs above/below an <strong>80 kg CO2e/MWh</strong> low‑carbon benchmark (included in <code>data/share_failing_80kg.csv</code>) to build a simple “capacity vs threshold” panel.</p>
+<p>Important: in that capacity panel, the <strong>bar heights</strong> are from the IEA NZE scenario, while the <strong>above/below split</strong> applies Li &amp; He’s existing vs future reservoir shares for illustration; it is not a modeled forecast of capacity-by‑CI.</p>
 </div>
 </div>
 </div>
@@ -272,8 +270,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a>  )</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<section id="world-map" class="level3">
-<h3 class="anchored" data-anchor-id="world-map">World Map</h3>
+</section>
+<section id="world-map" class="level2">
+<h2 class="anchored" data-anchor-id="world-map">World Map</h2>
 <p>This map layers three different ideas on one geography. The background bands show broad <strong>biome zones</strong> (Li &amp; He), basin polygons show <strong>where total planned MW accumulates</strong> (FHReD aggregated to BasinATLAS), and points show the locations and sizes of individual proposed dams. Together, it supports the thesis that future hydropower growth is concentrated in a handful of basins and latitudes where carbon-intensity risks may be higher.</p>
 <div class="cell">
 <details class="code-fold">
@@ -512,8 +511,8 @@ Figure&nbsp;1: Future hydropower on one map: biome bands (Li &amp; He), basin po
 </div>
 </div>
 </section>
-<section id="treemap" class="level3">
-<h3 class="anchored" data-anchor-id="treemap">Treemap</h3>
+<section id="treemap" class="level2">
+<h2 class="anchored" data-anchor-id="treemap">Treemap</h2>
 <p>This treemap collapses the FHReD pipeline into one simple message: a few basins dominate the future buildout. Tile area encodes planned MW, and the ranked basin labels match the map so the same basin has the same name and color across panels.</p>
 <div class="cell">
 <details class="code-fold">
@@ -588,8 +587,8 @@ Figure&nbsp;2: Future hydropower capacity by major river basin (FHReD), showing 
 </div>
 </div>
 </section>
-<section id="hydropower-sun" class="level3">
-<h3 class="anchored" data-anchor-id="hydropower-sun">“Hydropower sun”</h3>
+<section id="hydropower-sun" class="level2">
+<h2 class="anchored" data-anchor-id="hydropower-sun">“Hydropower sun”</h2>
 <p>This “sun” plot is a compact way to show that hydropower is not just “how much,” but also <strong>when</strong>—it has strong daily and seasonal patterns. While this panel is a regional example, it supports the story’s framing that hydropower’s value is partly its timing and dispatchability.</p>
 <div class="cell">
 <details class="code-fold">
@@ -723,206 +722,110 @@ Figure&nbsp;3: Hydropower “sun”: months at the core, hours as corona (region
 </div>
 </div>
 </section>
-<section id="stacked-area-chart" class="level3">
-<h3 class="anchored" data-anchor-id="stacked-area-chart">Stacked Area Chart</h3>
-<p>This panel uses the IEA NZE scenario to show why hydropower remains in the net-zero conversation: it grows in absolute terms, even as solar and wind grow faster. The vertical reference line marks “now-ish” to separate recent history from the scenario period.</p>
+<section id="capacity-vs-carbon-threshold" class="level2">
+<h2 class="anchored" data-anchor-id="capacity-vs-carbon-threshold">Capacity vs carbon threshold</h2>
+<p>This chart shows total global hydropower capacity in 2019 vs the NZE 2050 target (IEA NZE data), then splits each bar into capacity that is illustratively “below” vs “above” the 80 kg CO2e/MWh low‑carbon benchmark using Li &amp; He (2022) shares for existing vs future dams. The split is the assumption: Li &amp; He’s dam shares are applied to capacity totals for communication, not a modeled forecast.</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Show code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>nze <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(here<span class="sc">::</span><span class="fu">here</span>(<span class="st">"data/NZE2021_AnnexA.csv"</span>), <span class="at">show_col_types =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>generation <span class="ot">&lt;-</span> nze <span class="sc">%&gt;%</span></span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    Flow <span class="sc">==</span> <span class="st">"Electricity generation"</span>,</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    Unit <span class="sc">==</span> <span class="st">"TWh"</span>,</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    Product <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"Hydro"</span>, <span class="st">"Solar PV"</span>, <span class="st">"Wind"</span>, <span class="st">"Renewables"</span>)</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(Product, Year, Value) <span class="sc">%&gt;%</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_wider</span>(<span class="at">names_from =</span> Product, <span class="at">values_from =</span> Value) <span class="sc">%&gt;%</span></span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">Other_Renewables =</span> Renewables <span class="sc">-</span> Hydro <span class="sc">-</span> <span class="st">`</span><span class="at">Solar PV</span><span class="st">`</span> <span class="sc">-</span> Wind,</span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">Hydro_Share_Renewables =</span> (Hydro <span class="sc">/</span> Renewables) <span class="sc">*</span> <span class="dv">100</span></span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>viz_data <span class="ot">&lt;-</span> generation <span class="sc">%&gt;%</span></span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(Year, <span class="at">Hydropower =</span> Hydro, <span class="st">`</span><span class="at">Solar PV</span><span class="st">`</span>, Wind, Other_Renewables) <span class="sc">%&gt;%</span></span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(<span class="at">cols =</span> <span class="sc">-</span>Year, <span class="at">names_to =</span> <span class="st">"Source"</span>, <span class="at">values_to =</span> <span class="st">"Generation"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">Source =</span> <span class="fu">factor</span>(Source, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Other_Renewables"</span>, <span class="st">"Wind"</span>, <span class="st">"Solar PV"</span>, <span class="st">"Hydropower"</span>)),</span>
-<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>    <span class="at">Source_Label =</span> <span class="fu">case_when</span>(</span>
-<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>      Source <span class="sc">==</span> <span class="st">"Other_Renewables"</span> <span class="sc">~</span> <span class="st">"Other"</span>,</span>
-<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>      Source <span class="sc">==</span> <span class="st">"Solar PV"</span> <span class="sc">~</span> <span class="st">"Solar PV"</span>,</span>
-<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>      Source <span class="sc">==</span> <span class="st">"Wind"</span> <span class="sc">~</span> <span class="st">"Wind"</span>,</span>
-<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>      <span class="cn">TRUE</span> <span class="sc">~</span> <span class="st">"Hydropower"</span></span>
-<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>p_mix <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(viz_data, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> Generation, <span class="at">fill =</span> Source_Label)) <span class="sc">+</span></span>
-<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_area</span>(<span class="at">alpha =</span> <span class="fl">0.85</span>, <span class="at">color =</span> <span class="st">"#ffffff"</span>, <span class="at">linewidth =</span> <span class="fl">0.3</span>) <span class="sc">+</span></span>
-<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>  <span class="co"># vertical dotted line at 2026</span></span>
-<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(</span>
-<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">xintercept =</span> <span class="dv">2026</span>,</span>
-<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>    <span class="at">linetype   =</span> <span class="st">"dotted"</span>,</span>
-<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>    <span class="at">color      =</span> <span class="st">"gray40"</span>,</span>
-<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>    <span class="at">linewidth  =</span> <span class="fl">0.5</span></span>
-<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(</span>
-<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a>    <span class="at">values =</span> <span class="fu">c</span>(<span class="st">"Hydropower"</span> <span class="ot">=</span> <span class="st">"#1c5d99"</span>, <span class="st">"Solar PV"</span> <span class="ot">=</span> <span class="st">"#639fab"</span>,</span>
-<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>               <span class="st">"Wind"</span> <span class="ot">=</span> <span class="st">"#bbcde5"</span>, <span class="st">"Other"</span> <span class="ot">=</span> <span class="st">"#222222"</span>),</span>
-<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>    <span class="at">breaks =</span> <span class="fu">c</span>(<span class="st">"Hydropower"</span>, <span class="st">"Solar PV"</span>, <span class="st">"Wind"</span>, <span class="st">"Other"</span>),</span>
-<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a>    <span class="at">guide =</span> <span class="fu">guide_legend</span>(<span class="at">reverse =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">breaks =</span> <span class="fu">c</span>(<span class="dv">2019</span>, <span class="dv">2026</span>, <span class="dv">2030</span>, <span class="dv">2040</span>, <span class="dv">2050</span>), <span class="at">expand =</span> <span class="fu">expansion</span>(<span class="at">mult =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="fl">0.08</span>))) <span class="sc">+</span></span>
-<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">labels =</span> scales<span class="sc">::</span><span class="fu">comma_format</span>()) <span class="sc">+</span></span>
-<span id="cb6-46"><a href="#cb6-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Year"</span>, <span class="at">y =</span> <span class="st">"Electricity (TWh)"</span>, <span class="at">fill =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb6-47"><a href="#cb6-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>(<span class="at">base_size =</span> <span class="dv">11</span>) <span class="sc">+</span></span>
-<span id="cb6-48"><a href="#cb6-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
-<span id="cb6-49"><a href="#cb6-49" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position      =</span> <span class="fu">c</span>(<span class="fl">0.02</span>, <span class="fl">0.98</span>),</span>
-<span id="cb6-50"><a href="#cb6-50" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.justification =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>),</span>
-<span id="cb6-51"><a href="#cb6-51" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.direction     =</span> <span class="st">"vertical"</span>,</span>
-<span id="cb6-52"><a href="#cb6-52" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.box           =</span> <span class="st">"vertical"</span>,</span>
-<span id="cb6-53"><a href="#cb6-53" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.background    =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> scales<span class="sc">::</span><span class="fu">alpha</span>(<span class="st">"white"</span>, <span class="fl">0.75</span>), <span class="at">color =</span> <span class="cn">NA</span>),</span>
-<span id="cb6-54"><a href="#cb6-54" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.key           =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="cn">NA</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
-<span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.text          =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times New Roman"</span>),</span>
-<span id="cb6-56"><a href="#cb6-56" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text            =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times New Roman"</span>),</span>
-<span id="cb6-57"><a href="#cb6-57" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid.minor     =</span> <span class="fu">element_blank</span>(),</span>
-<span id="cb6-58"><a href="#cb6-58" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"transparent"</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
-<span id="cb6-59"><a href="#cb6-59" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"transparent"</span>, <span class="at">color =</span> <span class="cn">NA</span>)</span>
-<span id="cb6-60"><a href="#cb6-60" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb6-61"><a href="#cb6-61" aria-hidden="true" tabindex="-1"></a>p_mix</span>
-<span id="cb6-62"><a href="#cb6-62" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-63"><a href="#cb6-63" aria-hidden="true" tabindex="-1"></a><span class="co"># Save with transparent background for layout.</span></span>
-<span id="cb6-64"><a href="#cb6-64" aria-hidden="true" tabindex="-1"></a><span class="fu">ggsave</span>(</span>
-<span id="cb6-65"><a href="#cb6-65" aria-hidden="true" tabindex="-1"></a>  <span class="at">filename =</span> <span class="fu">here</span>(<span class="st">"images"</span>, <span class="st">"stacked_area_nze_renewables_mix.pdf"</span>),</span>
-<span id="cb6-66"><a href="#cb6-66" aria-hidden="true" tabindex="-1"></a>  <span class="at">plot =</span> p_mix,</span>
-<span id="cb6-67"><a href="#cb6-67" aria-hidden="true" tabindex="-1"></a>  <span class="at">device =</span> cairo_pdf,</span>
-<span id="cb6-68"><a href="#cb6-68" aria-hidden="true" tabindex="-1"></a>  <span class="at">width =</span> <span class="dv">6</span>,</span>
-<span id="cb6-69"><a href="#cb6-69" aria-hidden="true" tabindex="-1"></a>  <span class="at">height =</span> <span class="dv">5</span>,</span>
-<span id="cb6-70"><a href="#cb6-70" aria-hidden="true" tabindex="-1"></a>  <span class="at">units =</span> <span class="st">"in"</span>,</span>
-<span id="cb6-71"><a href="#cb6-71" aria-hidden="true" tabindex="-1"></a>  <span class="at">bg =</span> <span class="st">"transparent"</span></span>
-<span id="cb6-72"><a href="#cb6-72" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># This chunk reproduces the “capacity vs threshold” panel used in the final infographic.</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co">#</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Data:</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co"># - Total bar heights: IEA NZE installed hydro capacity (2019 vs 2050 target).</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="co"># - Above/below split: Li &amp; He (2022) shares (existing vs future) from `data/share_failing_80kg.csv`.</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Assumption:</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="co"># - We apply Li &amp; He’s dam/reservoir shares to NZE capacity totals for illustration.</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="co"># 1. NZE hydropower capacity in 2019 and 2050 (GW → MW)</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>nze <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="fu">here</span>(<span class="st">"data/NZE2021_AnnexA.csv"</span>), <span class="at">show_col_types =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>capacity <span class="ot">&lt;-</span> nze <span class="sc">%&gt;%</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>    Product <span class="sc">==</span> <span class="st">"Hydro"</span>,</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>    Flow <span class="sc">==</span> <span class="st">"Installed total power capacity"</span>,</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>    Unit <span class="sc">==</span> <span class="st">"GW"</span>,</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>    Year <span class="sc">%in%</span> <span class="fu">c</span>(<span class="dv">2019</span>, <span class="dv">2050</span>)</span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(Year, <span class="at">Hydro_GW =</span> Value) <span class="sc">%&gt;%</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">Hydro_MW =</span> Hydro_GW <span class="sc">*</span> <span class="dv">1000</span>)</span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a><span class="co"># 2. Li &amp; He-style shares above/below 80 kg CO2e/MWh (existing vs future dams)</span></span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>shares <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="fu">here</span>(<span class="st">"data/share_failing_80kg.csv"</span>), <span class="at">show_col_types =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a><span class="co"># 3. Map NZE years → which share to use (existing vs future)</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>capacity_split <span class="ot">&lt;-</span> capacity <span class="sc">%&gt;%</span></span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">group =</span> <span class="fu">if_else</span>(Year <span class="sc">==</span> <span class="dv">2019</span>, <span class="st">"Existing dams"</span>, <span class="st">"Future dams"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">left_join</span>(shares, <span class="at">by =</span> <span class="st">"group"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb6-29"><a href="#cb6-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb6-30"><a href="#cb6-30" aria-hidden="true" tabindex="-1"></a>    <span class="at">frac_above =</span> pct_above_80 <span class="sc">/</span> <span class="dv">100</span>,</span>
+<span id="cb6-31"><a href="#cb6-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">frac_below =</span> pct_below_80 <span class="sc">/</span> <span class="dv">100</span>,</span>
+<span id="cb6-32"><a href="#cb6-32" aria-hidden="true" tabindex="-1"></a>    <span class="at">MW_above   =</span> Hydro_MW <span class="sc">*</span> frac_above,</span>
+<span id="cb6-33"><a href="#cb6-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">MW_below   =</span> Hydro_MW <span class="sc">*</span> frac_below</span>
+<span id="cb6-34"><a href="#cb6-34" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb6-35"><a href="#cb6-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">select</span>(Year, MW_above, MW_below) <span class="sc">%&gt;%</span></span>
+<span id="cb6-36"><a href="#cb6-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">pivot_longer</span>(</span>
+<span id="cb6-37"><a href="#cb6-37" aria-hidden="true" tabindex="-1"></a>    <span class="at">cols =</span> <span class="fu">starts_with</span>(<span class="st">"MW_"</span>),</span>
+<span id="cb6-38"><a href="#cb6-38" aria-hidden="true" tabindex="-1"></a>    <span class="at">names_to =</span> <span class="st">"segment"</span>,</span>
+<span id="cb6-39"><a href="#cb6-39" aria-hidden="true" tabindex="-1"></a>    <span class="at">values_to =</span> <span class="st">"MW"</span></span>
+<span id="cb6-40"><a href="#cb6-40" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb6-41"><a href="#cb6-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb6-42"><a href="#cb6-42" aria-hidden="true" tabindex="-1"></a>    <span class="at">segment =</span> <span class="fu">if_else</span>(segment <span class="sc">==</span> <span class="st">"MW_above"</span>,</span>
+<span id="cb6-43"><a href="#cb6-43" aria-hidden="true" tabindex="-1"></a>                      <span class="st">"Above 80 kg CO2e/MWh"</span>,</span>
+<span id="cb6-44"><a href="#cb6-44" aria-hidden="true" tabindex="-1"></a>                      <span class="st">"Below 80 kg CO2e/MWh"</span>),</span>
+<span id="cb6-45"><a href="#cb6-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">Year =</span> <span class="fu">factor</span>(Year)</span>
+<span id="cb6-46"><a href="#cb6-46" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb6-47"><a href="#cb6-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-48"><a href="#cb6-48" aria-hidden="true" tabindex="-1"></a><span class="co"># 4. Stacked bar: total capacity, split by above/below 80 kg CO2e/MWh</span></span>
+<span id="cb6-49"><a href="#cb6-49" aria-hidden="true" tabindex="-1"></a>p_capacity_threshold <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(capacity_split, <span class="fu">aes</span>(<span class="at">x =</span> Year, <span class="at">y =</span> MW, <span class="at">fill =</span> segment)) <span class="sc">+</span></span>
+<span id="cb6-50"><a href="#cb6-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">color =</span> <span class="st">"#222222"</span>) <span class="sc">+</span></span>
+<span id="cb6-51"><a href="#cb6-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">labels =</span> scales<span class="sc">::</span>comma) <span class="sc">+</span></span>
+<span id="cb6-52"><a href="#cb6-52" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(</span>
+<span id="cb6-53"><a href="#cb6-53" aria-hidden="true" tabindex="-1"></a>    <span class="at">values =</span> <span class="fu">c</span>(</span>
+<span id="cb6-54"><a href="#cb6-54" aria-hidden="true" tabindex="-1"></a>      <span class="st">"Below 80 kg CO2e/MWh"</span> <span class="ot">=</span> <span class="st">"#993404"</span>,</span>
+<span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a>      <span class="st">"Above 80 kg CO2e/MWh"</span> <span class="ot">=</span> <span class="st">"#FFCA5C"</span></span>
+<span id="cb6-56"><a href="#cb6-56" aria-hidden="true" tabindex="-1"></a>    ),</span>
+<span id="cb6-57"><a href="#cb6-57" aria-hidden="true" tabindex="-1"></a>    <span class="at">name =</span> <span class="cn">NULL</span></span>
+<span id="cb6-58"><a href="#cb6-58" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb6-59"><a href="#cb6-59" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb6-60"><a href="#cb6-60" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Year"</span>,</span>
+<span id="cb6-61"><a href="#cb6-61" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Installed hydropower capacity (MW)"</span></span>
+<span id="cb6-62"><a href="#cb6-62" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb6-63"><a href="#cb6-63" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>(<span class="at">base_size =</span> <span class="dv">11</span>) <span class="sc">+</span></span>
+<span id="cb6-64"><a href="#cb6-64" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
+<span id="cb6-65"><a href="#cb6-65" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title =</span> <span class="fu">element_text</span>(<span class="at">face =</span> <span class="st">"bold"</span>),</span>
+<span id="cb6-66"><a href="#cb6-66" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position =</span> <span class="st">"none"</span>,</span>
+<span id="cb6-67"><a href="#cb6-67" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"transparent"</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
+<span id="cb6-68"><a href="#cb6-68" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"transparent"</span>, <span class="at">color =</span> <span class="cn">NA</span>)</span>
+<span id="cb6-69"><a href="#cb6-69" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb6-70"><a href="#cb6-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-71"><a href="#cb6-71" aria-hidden="true" tabindex="-1"></a>p_capacity_threshold</span>
+<span id="cb6-72"><a href="#cb6-72" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-73"><a href="#cb6-73" aria-hidden="true" tabindex="-1"></a><span class="fu">ggsave</span>(</span>
+<span id="cb6-74"><a href="#cb6-74" aria-hidden="true" tabindex="-1"></a>  <span class="at">filename =</span> <span class="fu">here</span>(<span class="st">"images"</span>, <span class="st">"capacity_vs_threshold.pdf"</span>),</span>
+<span id="cb6-75"><a href="#cb6-75" aria-hidden="true" tabindex="-1"></a>  <span class="at">plot =</span> p_capacity_threshold,</span>
+<span id="cb6-76"><a href="#cb6-76" aria-hidden="true" tabindex="-1"></a>  <span class="at">device =</span> cairo_pdf,</span>
+<span id="cb6-77"><a href="#cb6-77" aria-hidden="true" tabindex="-1"></a>  <span class="at">width =</span> <span class="dv">6</span>,</span>
+<span id="cb6-78"><a href="#cb6-78" aria-hidden="true" tabindex="-1"></a>  <span class="at">height =</span> <span class="dv">5</span>,</span>
+<span id="cb6-79"><a href="#cb6-79" aria-hidden="true" tabindex="-1"></a>  <span class="at">units =</span> <span class="st">"in"</span>,</span>
+<span id="cb6-80"><a href="#cb6-80" aria-hidden="true" tabindex="-1"></a>  <span class="at">bg =</span> <span class="st">"transparent"</span></span>
+<span id="cb6-81"><a href="#cb6-81" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div id="fig-renew03" class="quarto-float quarto-figure quarto-figure-center anchored" alt="Stacked area chart of renewable electricity generation by source from 2019 to 2050; hydropower grows but is a smaller share by 2050 as solar and wind expand.">
+<div id="fig-capacity-vs-threshold" class="quarto-float quarto-figure quarto-figure-center anchored" width="900">
 <figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-renew03-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="index_files/figure-html/fig-renew03-1.png" class="img-fluid figure-img" alt="Stacked area chart of renewable electricity generation by source from 2019 to 2050; hydropower grows but is a smaller share by 2050 as solar and wind expand." width="900">
+<div aria-describedby="fig-capacity-vs-threshold-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="index_files/figure-html/fig-capacity-vs-threshold-1.png" id="fig-capacity-vs-threshold" class="img-fluid figure-img" width="900">
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-renew03-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;4: In the IEA NZE scenario, hydropower generation increases, but solar and wind grow faster—so hydropower’s share of renewable electricity declines.
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-capacity-vs-threshold-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;4
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
-</section>
-<section id="heatmap" class="level3">
-<h3 class="anchored" data-anchor-id="heatmap">Heatmap</h3>
-<p>This 3×3 scenario matrix (heatmap) uses Li &amp; He’s reported medians to illustrate how carbon-intensity risk changes across depth and trophic conditions. It’s an index (sum of marginal medians) meant for communication and comparison, not a modeled joint prediction for any specific dam.</p>
-<div class="cell">
-<details class="code-fold">
-<summary>Show code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>trophic_data <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">Category =</span> <span class="fu">factor</span>(<span class="fu">c</span>(<span class="st">"Oligotrophic"</span>, <span class="st">"Mesotrophic"</span>, <span class="st">"Eutrophic"</span>),</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>                    <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Oligotrophic"</span>, <span class="st">"Mesotrophic"</span>, <span class="st">"Eutrophic"</span>)),</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">CI_20yr  =</span> <span class="fu">c</span>(<span class="fl">67.2</span>, <span class="fl">116.0</span>, <span class="fl">248.0</span>),</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">CI_100yr =</span> <span class="fu">c</span>(<span class="fl">55.6</span>, <span class="fl">69.1</span>, <span class="fl">116.7</span>)</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>depth_data <span class="ot">&lt;-</span> <span class="fu">tibble</span>(</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">Category =</span> <span class="fu">factor</span>(<span class="fu">c</span>(<span class="st">"Shallow (&lt;20 m)"</span>, <span class="st">"Medium (20–100 m)"</span>, <span class="st">"Deep (&gt;100 m)"</span>),</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>                    <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Deep (&gt;100 m)"</span>, <span class="st">"Medium (20–100 m)"</span>, <span class="st">"Shallow (&lt;20 m)"</span>)),</span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">CI_20yr  =</span> <span class="fu">c</span>(<span class="fl">233.0</span>, <span class="fl">114.3</span>, <span class="fl">35.6</span>),</span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">CI_100yr =</span> <span class="fu">c</span>(<span class="fl">124.5</span>, <span class="fl">66.0</span>, <span class="fl">27.7</span>)</span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>trophic_20 <span class="ot">&lt;-</span> trophic_data <span class="sc">%&gt;%</span></span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(<span class="at">trophic =</span> <span class="fu">as.character</span>(Category), <span class="at">ci_trophic_20 =</span> CI_20yr)</span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>depth_20 <span class="ot">&lt;-</span> depth_data <span class="sc">%&gt;%</span></span>
-<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(<span class="at">depth =</span> <span class="fu">as.character</span>(Category), <span class="at">ci_depth_20 =</span> CI_20yr)</span>
-<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>scenario_grid <span class="ot">&lt;-</span> tidyr<span class="sc">::</span><span class="fu">expand_grid</span>(depth_20, trophic_20) <span class="sc">%&gt;%</span></span>
-<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>    <span class="at">ci_index_20 =</span> ci_depth_20 <span class="sc">+</span> ci_trophic_20,</span>
-<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># factor with custom labels for y-axis</span></span>
-<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>    <span class="at">depth =</span> <span class="fu">factor</span>(</span>
-<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>      depth,</span>
-<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>      <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Deep (&gt;100 m)"</span>, <span class="st">"Medium (20–100 m)"</span>, <span class="st">"Shallow (&lt;20 m)"</span>),</span>
-<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>      <span class="at">labels =</span> <span class="fu">c</span>(<span class="st">"Deep</span><span class="sc">\n</span><span class="st">(&gt;100 m)"</span>, <span class="st">"Medium</span><span class="sc">\n</span><span class="st">(20–100 m)"</span>, <span class="st">"Shallow</span><span class="sc">\n</span><span class="st">(&lt;20 m)"</span>)</span>
-<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>    ),</span>
-<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>    <span class="co"># factor with custom labels for x-axis</span></span>
-<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">trophic =</span> <span class="fu">factor</span>(</span>
-<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>      trophic,</span>
-<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>      <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Oligotrophic"</span>, <span class="st">"Mesotrophic"</span>, <span class="st">"Eutrophic"</span>),</span>
-<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>      <span class="at">labels =</span> <span class="fu">c</span>(<span class="st">"Oligotrophic</span><span class="sc">\n</span><span class="st">(low nutrients)"</span>,</span>
-<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"Mesotrophic"</span>,</span>
-<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a>                 <span class="st">"Eutrophic</span><span class="sc">\n</span><span class="st">(high nutrients)"</span>)</span>
-<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb7-38"><a href="#cb7-38" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb7-39"><a href="#cb7-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-40"><a href="#cb7-40" aria-hidden="true" tabindex="-1"></a>p_grid <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(scenario_grid, <span class="fu">aes</span>(<span class="at">x =</span> trophic, <span class="at">y =</span> depth, <span class="at">fill =</span> ci_index_20)) <span class="sc">+</span></span>
-<span id="cb7-41"><a href="#cb7-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_tile</span>(<span class="at">color =</span> <span class="st">"white"</span>, <span class="at">linewidth =</span> <span class="fl">0.7</span>) <span class="sc">+</span></span>
-<span id="cb7-42"><a href="#cb7-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(</span>
-<span id="cb7-43"><a href="#cb7-43" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">round</span>(ci_index_20)),</span>
-<span id="cb7-44"><a href="#cb7-44" aria-hidden="true" tabindex="-1"></a>    <span class="at">color   =</span> <span class="st">"white"</span>,</span>
-<span id="cb7-45"><a href="#cb7-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">fontface =</span> <span class="st">"bold"</span>,</span>
-<span id="cb7-46"><a href="#cb7-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">size    =</span> <span class="dv">6</span>,</span>
-<span id="cb7-47"><a href="#cb7-47" aria-hidden="true" tabindex="-1"></a>    <span class="at">family  =</span> <span class="st">"Times New Roman"</span></span>
-<span id="cb7-48"><a href="#cb7-48" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb7-49"><a href="#cb7-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_viridis_c</span>(</span>
-<span id="cb7-50"><a href="#cb7-50" aria-hidden="true" tabindex="-1"></a>    <span class="at">option    =</span> <span class="st">"magma"</span>,</span>
-<span id="cb7-51"><a href="#cb7-51" aria-hidden="true" tabindex="-1"></a>    <span class="at">direction =</span> <span class="dv">1</span>,</span>
-<span id="cb7-52"><a href="#cb7-52" aria-hidden="true" tabindex="-1"></a>    <span class="at">begin     =</span> <span class="fl">0.1</span>,</span>
-<span id="cb7-53"><a href="#cb7-53" aria-hidden="true" tabindex="-1"></a>    <span class="at">end       =</span> <span class="fl">0.9</span>,</span>
-<span id="cb7-54"><a href="#cb7-54" aria-hidden="true" tabindex="-1"></a>    <span class="at">name      =</span> <span class="st">"Index CI</span><span class="sc">\n</span><span class="st">(kg CO2e/MWh)"</span></span>
-<span id="cb7-55"><a href="#cb7-55" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb7-56"><a href="#cb7-56" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
-<span id="cb7-57"><a href="#cb7-57" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Trophic state"</span>,</span>
-<span id="cb7-58"><a href="#cb7-58" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Reservoir depth"</span></span>
-<span id="cb7-59"><a href="#cb7-59" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb7-60"><a href="#cb7-60" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
-<span id="cb7-61"><a href="#cb7-61" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
-<span id="cb7-62"><a href="#cb7-62" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.grid       =</span> <span class="fu">element_blank</span>(),</span>
-<span id="cb7-63"><a href="#cb7-63" aria-hidden="true" tabindex="-1"></a>    <span class="at">text             =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times New Roman"</span>),  <span class="co"># global</span></span>
-<span id="cb7-64"><a href="#cb7-64" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text        =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times New Roman"</span>, <span class="at">color =</span> <span class="st">"black"</span>),</span>
-<span id="cb7-65"><a href="#cb7-65" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title       =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times New Roman"</span>, <span class="at">face =</span> <span class="st">"bold"</span>),</span>
-<span id="cb7-66"><a href="#cb7-66" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.title     =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times New Roman"</span>, <span class="at">face =</span> <span class="st">"bold"</span>),</span>
-<span id="cb7-67"><a href="#cb7-67" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.text      =</span> <span class="fu">element_text</span>(<span class="at">family =</span> <span class="st">"Times New Roman"</span>),</span>
-<span id="cb7-68"><a href="#cb7-68" aria-hidden="true" tabindex="-1"></a>    <span class="at">plot.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"transparent"</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
-<span id="cb7-69"><a href="#cb7-69" aria-hidden="true" tabindex="-1"></a>    <span class="at">panel.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"transparent"</span>, <span class="at">color =</span> <span class="cn">NA</span>)</span>
-<span id="cb7-70"><a href="#cb7-70" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb7-71"><a href="#cb7-71" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-72"><a href="#cb7-72" aria-hidden="true" tabindex="-1"></a>p_grid</span>
-<span id="cb7-73"><a href="#cb7-73" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-74"><a href="#cb7-74" aria-hidden="true" tabindex="-1"></a><span class="co"># Save with transparent background for layout.</span></span>
-<span id="cb7-75"><a href="#cb7-75" aria-hidden="true" tabindex="-1"></a><span class="fu">ggsave</span>(</span>
-<span id="cb7-76"><a href="#cb7-76" aria-hidden="true" tabindex="-1"></a>  <span class="at">filename =</span> <span class="fu">here</span>(<span class="st">"images"</span>, <span class="st">"heatmap_lihe_scenario_grid.pdf"</span>),</span>
-<span id="cb7-77"><a href="#cb7-77" aria-hidden="true" tabindex="-1"></a>  <span class="at">plot =</span> p_grid,</span>
-<span id="cb7-78"><a href="#cb7-78" aria-hidden="true" tabindex="-1"></a>  <span class="at">device =</span> cairo_pdf,</span>
-<span id="cb7-79"><a href="#cb7-79" aria-hidden="true" tabindex="-1"></a>  <span class="at">width =</span> <span class="dv">8</span>,</span>
-<span id="cb7-80"><a href="#cb7-80" aria-hidden="true" tabindex="-1"></a>  <span class="at">height =</span> <span class="dv">5</span>,</span>
-<span id="cb7-81"><a href="#cb7-81" aria-hidden="true" tabindex="-1"></a>  <span class="at">units =</span> <span class="st">"in"</span>,</span>
-<span id="cb7-82"><a href="#cb7-82" aria-hidden="true" tabindex="-1"></a>  <span class="at">bg =</span> <span class="st">"transparent"</span></span>
-<span id="cb7-83"><a href="#cb7-83" aria-hidden="true" tabindex="-1"></a>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-</details>
-<div class="cell-output-display">
-<div id="fig-ci18" class="quarto-float quarto-figure quarto-figure-center anchored" alt="3x3 heatmap grid with trophic state on x-axis and reservoir depth on y-axis; darker colors and larger numbers indicate higher index carbon intensity.">
-<figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-ci18-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="index_files/figure-html/fig-ci18-1.png" class="img-fluid figure-img" alt="3x3 heatmap grid with trophic state on x-axis and reservoir depth on y-axis; darker colors and larger numbers indicate higher index carbon intensity." width="1200">
-</div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-ci18-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;5: Scenario grid (20-year horizon): an index built from Li &amp; He (2022) marginal medians by depth and trophic state. Higher values indicate higher carbon-intensity risk conditions.
-</figcaption>
-</figure>
-</div>
-</div>
-</div>
-</section>
 </section>
 <section id="design-choices" class="level2">
-<h2 class="anchored" data-anchor-id="design-choices">3. Design choices</h2>
+<h2 class="anchored" data-anchor-id="design-choices">Design Choices</h2>
 <div class="tabset-margin-container"></div><div class="panel-tabset">
 <ul class="nav nav-tabs" role="tablist"><li class="nav-item" role="presentation"><a class="nav-link active" id="tabset-2-1-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-1" role="tab" aria-controls="tabset-2-1" aria-selected="true" href="">Graphic form</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-2-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-2" role="tab" aria-controls="tabset-2-2" aria-selected="false" href="">Text</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-3-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-3" role="tab" aria-controls="tabset-2-3" aria-selected="false" href="">Themes</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-4-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-4" role="tab" aria-controls="tabset-2-4" aria-selected="false" href="">Colors</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-5-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-5" role="tab" aria-controls="tabset-2-5" aria-selected="false" href="">Typography</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-6-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-6" role="tab" aria-controls="tabset-2-6" aria-selected="false" href="">General design</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-7-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-7" role="tab" aria-controls="tabset-2-7" aria-selected="false" href="">Contextualizing data</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-8-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-8" role="tab" aria-controls="tabset-2-8" aria-selected="false" href="">Centering the primary message</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-9-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-9" role="tab" aria-controls="tabset-2-9" aria-selected="false" href="">Accessibility</a></li><li class="nav-item" role="presentation"><a class="nav-link" id="tabset-2-10-tab" data-bs-toggle="tab" data-bs-target="#tabset-2-10" role="tab" aria-controls="tabset-2-10" aria-selected="false" href="">DEI lens</a></li></ul>
 <div class="tab-content">
@@ -985,6 +888,20 @@ Figure&nbsp;5: Scenario grid (20-year horizon): an index built from Li &amp; He 
 <li><strong>Avoid inevitability framing</strong>: I emphasize choices and trade-offs rather than “the world will build these dams.”</li>
 <li><strong>Place-based impacts</strong>: Basin framing highlights downstream communities and ecosystems that often cross borders.</li>
 </ul>
+<section id="assembled-in-affinity" class="level2">
+<h2 class="anchored" data-anchor-id="assembled-in-affinity">Assembled in Affinity</h2>
+<p>After exporting each panel as a PDF from R (see the <code>ggsave()</code> calls in the figure chunks), I assembled the final infographic layout in <strong>Affinity Designer</strong>. This workflow makes the typographic and spatial composition predictable (alignment, spacing, and hierarchy), while keeping every chart panel reproducible from code. <em>(Placeholder: I’ll embed the final infographic export here once it’s ready.)</em></p>
+</section>
+<section id="limitations-assumptions" class="level2">
+<h2 class="anchored" data-anchor-id="limitations-assumptions">Limitations &amp; assumptions</h2>
+<ul>
+<li><strong>FHReD coverage</strong>: FHReD is the best open compilation I found, but “future dams” are inherently uncertain; the database may miss projects or include projects that do not get built.</li>
+<li><strong>Spatial joins</strong>: Basin assignment depends on polygon boundaries and geometry validity; any spatial join can produce edge cases near borders/coasts.</li>
+<li><strong>Biome bands</strong>: The map’s “biomes” are implemented as latitudinal bands tied to Li &amp; He’s biome medians; they’re a communication device, not a local ecological classification for each dam.</li>
+<li><strong>Capacity vs threshold split (illustrative)</strong>: The NZE capacity totals are scenario data, while the above/below 80 kg CO2e/MWh split applies Li &amp; He’s shares (existing vs future) to those totals for communication—not a modeled forecast of capacity-by‑CI.</li>
+<li><strong>Sun plot context</strong>: The hydropower timing “sun” is a normalized output profile for a specific region/dataset; it supports the timing argument but is not a global inventory of hydro seasonality.</li>
+</ul>
+</section>
 </div>
 </div>
 </div>
